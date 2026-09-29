@@ -1,0 +1,15 @@
+dataset:
+  repo_id: place_bread_skillet_left_cen_arm_near_side_cam
+  root: data/lerobot/place_bread_skillet_left_cen_arm_near_side_cam
+evaluation:
+  checkpoint: outputs/train/place_bread_skillet_left_cen_arm_near_side_cam_dp_emix/checkpoints/030000/pretrained_model
+  output_dir: outputs/eval/place_bread_skillet_left_cen_arm_near_side_cam_dp_emix
+  benchmark_root: third_party/RoboTwin
+  task_name: place_bread_skillet_left_cen_arm_near_side_cam
+  task_config: place_bread_skillet_left_cen_arm_near_side_cam
+  piper_distance: 0.6
+  episodes: 100
+  seed: 0
+  device: cuda
+  save_video: true
+  video_fps: 10

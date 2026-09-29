@@ -1,0 +1,34 @@
+dataset:
+  repo_id: place_dual_shoes_left_cen_arm_top_cam
+  root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/archive/DP-10tasks-500ep-emix-baseline-cen-arm-top-cam-20260911/data/lerobot/place_dual_shoes_left_cen_arm_top_cam
+evaluation:
+  checkpoint: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/run_v0-singleTask-noiseVar0025Tr-emixDP-s5-seed0/train/place_dual_shoes_left_cen_arm_top_cam_dp_emix/checkpoints/030000/pretrained_model
+  output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/run_v0-singleTask-noiseVar0025Tr-emixDP-s5-seed0/eval/place_dual_shoes_left_cen_arm_top_cam_dp_emix
+  benchmark_root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/third_party/RoboTwin
+  task_name: place_dual_shoes_left_cen_arm_top_cam
+  task_config: place_dual_shoes_left_cen_arm_top_cam
+  piper_distance: 0.6
+  episodes: 100
+  seed: 0
+  device: cuda
+  save_video: true
+  video_fps: 10
+  image_noise:
+    enabled: false
+    variance: 0.0025
+  image_noise_seed: 0
+protocol:
+  family: v0
+  experiment: v0-singleTask-noise
+  id: v0-singleTask-noiseVar0025Tr-emixDP
+  parent: v0
+  task_set: s5
+  model: emixDP
+  training_noise: gaussian
+  evaluation_noise: none
+  noise_variance: 0.0025
+  selection_metric: historical-emix-minus-dp-percentage-points
+  execution_order:
+  - v0-singleTask-noiseVar0025Tr-emixDP
+  - v0-singleTask-noiseVar0025TrEv-emixDP
+  history_noise_status: unknown

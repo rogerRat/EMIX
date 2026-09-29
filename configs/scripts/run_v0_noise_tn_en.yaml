@@ -1,0 +1,116 @@
+# Approved protocol: docs/_exp.md. Fixed s5 chosen by historical EMIX minus DP.
+# Single-sided first, double-sided second; both share the same noisy-trained DP models.
+project:
+  robotwin_root: third_party/RoboTwin
+  runtime_config_root: configs/scripts/run/v0-noise-tn-en-s5-var0025-seed0/{task}
+  run_label: v0-noise-tn-en-s5-var0025-seed0
+  dataset_root: archive/DP-10tasks-500ep-emix-baseline-cen-arm-top-cam-20260911/data/lerobot/{task}
+  index_root: archive/DP-10tasks-500ep-emix-baseline-cen-arm-top-cam-20260911/data/emix_index/{task}
+  train_root: outputs/run_v0-noise-tn-s5-var0025-seed0/train/{task}
+  eval_root: outputs/run_v0-noise-tn-en-s5-var0025-seed0/eval/{task}
+  log_root: logs
+logging:
+  rotate_bytes: 52428800
+environments:
+  conda_executable: /home/rogerspyke/miniforge3/bin/conda
+  robotwin: emix-twin
+  preprocessing: emix
+  training: emix
+  evaluation: emix-twin
+pipeline:
+  episodes_per_task: 500
+  image_width: 84
+  image_height: 84
+  collection_fps: 17
+  left_qpos_dim: 7
+  evaluation_episodes: 100
+  evaluation_seed: 0
+  save_evaluation_video: true
+  piper_distance: 0.6
+  policies:
+  - baseline
+  rt_denoiser: oidn
+visualization:
+  output_root: outputs/run_v0-noise-tn-s5-var0025-seed0/vis
+  camera: isometric
+  window_width: 2400
+  window_height: 2800
+  device_scale_factor: 2
+  virtual_time_budget_ms: 120000
+  png_margin: 24
+  chrome_timeout_s: 600
+  max_points: 10000
+  skip_click_images: true
+training:
+  image_noise:
+    enabled: true
+    variance: 0.0025
+  batch_size: 64
+  num_workers: 16
+  steps: 30000
+  save_freq: 5000
+  log_freq: 100
+  seed: 0
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  optimizer_lr: 0.0001
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+  crop_shape: null
+  crop_is_random: true
+  down_dims:
+  - 512
+  - 1024
+  - 2048
+  kernel_size: 5
+  n_groups: 8
+  diffusion_step_embed_dim: 128
+  num_train_timesteps: 100
+  num_inference_steps: 100
+  noise_scheduler_type: DDPM
+  beta_schedule: squaredcos_cap_v2
+  prediction_type: epsilon
+  clip_sample: true
+  optimizer_betas:
+  - 0.95
+  - 0.999
+  optimizer_eps: 1.0e-08
+  optimizer_weight_decay: 1.0e-06
+  scheduler_name: cosine
+  scheduler_warmup_steps: 500
+emix:
+  alpha_mode: beta
+  beta: 2
+  loss_weight: 1.0
+  state_mode: anchor
+  scheduler:
+    type: logarithmic
+    start_batch_prob: 0.6
+    end_batch_prob: 0.0
+gpu_batches:
+  '0':
+  - stack_blocks_two_left_cen_arm_top_cam
+  - place_bread_basket_left_cen_arm_top_cam
+  - blocks_ranking_rgb_left_cen_arm_top_cam
+  '1':
+  - place_can_basket_left_cen_arm_top_cam
+  - place_dual_shoes_left_cen_arm_top_cam
+protocol:
+  family: v0-noise
+  id: v0-noise-tn-en
+  parent: v0
+  task_set: s5
+  model: dp-vanilla
+  training_noise: gaussian
+  evaluation_noise: gaussian
+  selection_metric: historical-emix-minus-dp-percentage-points
+  execution_order:
+  - v0-noise-tn-ec
+  - v0-noise-tn-en
+  history_noise_status: unknown
+evaluation:
+  image_noise:
+    enabled: true
+    variance: 0.0025
+  image_noise_seed: 0

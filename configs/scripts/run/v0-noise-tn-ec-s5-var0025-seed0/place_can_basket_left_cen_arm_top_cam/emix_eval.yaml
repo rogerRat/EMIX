@@ -1,0 +1,32 @@
+dataset:
+  repo_id: place_can_basket_left_cen_arm_top_cam
+  root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/archive/DP-10tasks-500ep-emix-baseline-cen-arm-top-cam-20260911/data/lerobot/place_can_basket_left_cen_arm_top_cam
+evaluation:
+  checkpoint: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/run_v0-noise-tn-s5-var0025-seed0/train/place_can_basket_left_cen_arm_top_cam_dp_emix/checkpoints/030000/pretrained_model
+  output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/run_v0-noise-tn-ec-s5-var0025-seed0/eval/place_can_basket_left_cen_arm_top_cam_dp_emix
+  benchmark_root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/third_party/RoboTwin
+  task_name: place_can_basket_left_cen_arm_top_cam
+  task_config: place_can_basket_left_cen_arm_top_cam
+  piper_distance: 0.6
+  episodes: 100
+  seed: 0
+  device: cuda
+  save_video: true
+  video_fps: 10
+  image_noise:
+    enabled: false
+    variance: 0.0025
+  image_noise_seed: 0
+protocol:
+  family: v0-noise
+  id: v0-noise-tn-ec
+  parent: v0
+  task_set: s5
+  model: dp-vanilla
+  training_noise: gaussian
+  evaluation_noise: none
+  selection_metric: historical-emix-minus-dp-percentage-points
+  execution_order:
+  - v0-noise-tn-ec
+  - v0-noise-tn-en
+  history_noise_status: unknown

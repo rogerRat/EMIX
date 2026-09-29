@@ -1,0 +1,37 @@
+batch_size: 64
+num_workers: 16
+steps: 30000
+save_freq: 5000
+log_freq: 100
+output_dir: outputs/train/place_dual_shoes_left_cen_arm_front_cam_dp_emix
+policy:
+  type: emix_diffusion
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  use_group_norm: false
+  optimizer_lr: 0.0001
+  push_to_hub: false
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+emix:
+  index_path: data/emix_index/place_dual_shoes_left_cen_arm_front_cam/emix_index.json
+  mixup:
+    alpha_mode: beta
+    beta: 2
+    alpha_value: null
+    loss_weight: 1.0
+    visual_keys:
+    - observation.images.head_camera
+    state_mode: anchor
+  training:
+    enabled: true
+    seed: 0
+    training_mode: mixed
+    scheduler:
+      type: logarithmic
+      start_batch_prob: 1.0
+      end_batch_prob: 0.0
+dataset:
+  repo_id: place_dual_shoes_left_cen_arm_front_cam
+  root: data/lerobot/place_dual_shoes_left_cen_arm_front_cam

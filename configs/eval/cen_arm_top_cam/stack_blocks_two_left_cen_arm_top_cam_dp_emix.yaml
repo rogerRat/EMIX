@@ -1,0 +1,15 @@
+dataset:
+  repo_id: stack_blocks_two_left_cen_arm_top_cam
+  root: data/lerobot/stack_blocks_two_left_cen_arm_top_cam
+evaluation:
+  checkpoint: outputs/train/stack_blocks_two_left_cen_arm_top_cam_dp_emix/checkpoints/030000/pretrained_model
+  output_dir: outputs/eval/stack_blocks_two_left_cen_arm_top_cam_dp_emix
+  benchmark_root: third_party/RoboTwin
+  task_name: stack_blocks_two_left_cen_arm_top_cam
+  task_config: stack_blocks_two_left_cen_arm_top_cam
+  piper_distance: 0.6
+  episodes: 100
+  seed: 0
+  device: cuda
+  save_video: true
+  video_fps: 10

@@ -1,0 +1,354 @@
+# Left-arm task registry: 83 entry points across 11 semantic families.
+#
+# Each semantic family contributes three standard variants that differ only by
+# camera_variant: the default central_cam, the left_oppo_cam viewpoint, and
+# central_wide_cam (same central pose, wider D435-W head camera, fovy 60).
+# The ten active families additionally carry the four centred-arm batch
+# variants cen_arm_right_wide_cam (wide default head camera shifted 0.30 m
+# to the +X side), cen_arm_near_side_cam (near side view of the workspace
+# centre from (0.20, -0.45, 0.90)), cen_arm_side_cam (diagonal side view
+# from (0.45, -0.45, 0.95) aimed at (0, 0, 0.95)), cen_arm_front_cam
+# (front view, 30-degree depression) and
+# cen_arm_top_cam (top-down view, 90-degree depression at
+# (0, -0.30, 1.50)).
+# source_step_limit equals the corresponding source task evaluation step limit
+# in RoboTwin task_config/_eval_step_limit.yml.
+#
+# scan_object is explicitly excluded and has no entry here.
+#
+# DEPRECATED family: hanging_mug is frozen and must not be collected (an
+# upright, yaw-only rack cannot physically hang the 039_mug).  Its three
+# variants stay listed only to keep the registry/test contract stable.
+variants:
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left
+    camera_variant: central_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left
+    camera_variant: central_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 1200
+  - semantic_task: hanging_mug
+    task_name: hanging_mug_left
+    camera_variant: central_cam
+    source_step_limit: 900
+  - semantic_task: hanging_mug
+    task_name: hanging_mug_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 900
+  - semantic_task: hanging_mug
+    task_name: hanging_mug_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 900
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left
+    camera_variant: central_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left
+    camera_variant: central_cam
+    source_step_limit: 500
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 500
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left
+    camera_variant: central_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 500
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left
+    camera_variant: central_cam
+    source_step_limit: 700
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 700
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 700
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left
+    camera_variant: central_cam
+    source_step_limit: 800
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 800
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 800
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left
+    camera_variant: central_cam
+    source_step_limit: 600
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 600
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 600
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left
+    camera_variant: central_cam
+    source_step_limit: 800
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 800
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 800
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left
+    camera_variant: central_cam
+    source_step_limit: 900
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_oppo_cam
+    camera_variant: left_oppo_cam
+    source_step_limit: 900
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_central_wide_cam
+    camera_variant: central_wide_cam
+    source_step_limit: 900
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 1200
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 500
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 700
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 800
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 600
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 800
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_cen_arm_right_wide_cam
+    camera_variant: cen_arm_right_wide_cam
+    source_step_limit: 900
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 1200
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 500
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 700
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 800
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 600
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 800
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_cen_arm_near_side_cam
+    camera_variant: cen_arm_near_side_cam
+    source_step_limit: 900
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 1200
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 500
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 700
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 800
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 600
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 800
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_cen_arm_side_cam
+    camera_variant: cen_arm_side_cam
+    source_step_limit: 900
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 1200
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 500
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 700
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 800
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 600
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 800
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_cen_arm_front_cam
+    camera_variant: cen_arm_front_cam
+    source_step_limit: 900
+  - semantic_task: blocks_ranking_rgb
+    task_name: blocks_ranking_rgb_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 1200
+  - semantic_task: blocks_ranking_size
+    task_name: blocks_ranking_size_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 1200
+  - semantic_task: place_bread_basket
+    task_name: place_bread_basket_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 700
+  - semantic_task: place_bread_skillet
+    task_name: place_bread_skillet_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 500
+  - semantic_task: place_burger_fries
+    task_name: place_burger_fries_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 500
+  - semantic_task: place_can_basket
+    task_name: place_can_basket_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 700
+  - semantic_task: place_cans_plasticbox
+    task_name: place_cans_plasticbox_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 800
+  - semantic_task: place_dual_shoes
+    task_name: place_dual_shoes_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 600
+  - semantic_task: stack_blocks_two
+    task_name: stack_blocks_two_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 800
+  - semantic_task: stack_bowls_two
+    task_name: stack_bowls_two_left_cen_arm_top_cam
+    camera_variant: cen_arm_top_cam
+    source_step_limit: 900

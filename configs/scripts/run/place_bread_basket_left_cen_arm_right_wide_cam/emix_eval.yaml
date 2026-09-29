@@ -1,0 +1,15 @@
+dataset:
+  repo_id: place_bread_basket_left_cen_arm_right_wide_cam
+  root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/data/lerobot/place_bread_basket_left_cen_arm_right_wide_cam
+evaluation:
+  checkpoint: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/train/place_bread_basket_left_cen_arm_right_wide_cam_dp_emix/checkpoints/030000/pretrained_model
+  output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/eval/place_bread_basket_left_cen_arm_right_wide_cam_dp_emix
+  benchmark_root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/third_party/RoboTwin
+  task_name: place_bread_basket_left_cen_arm_right_wide_cam
+  task_config: place_bread_basket_left_cen_arm_right_wide_cam
+  piper_distance: 0.6
+  episodes: 100
+  seed: 0
+  device: cuda
+  save_video: true
+  video_fps: 10

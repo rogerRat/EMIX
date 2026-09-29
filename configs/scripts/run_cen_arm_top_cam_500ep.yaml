@@ -1,0 +1,118 @@
+# cen_arm_top_cam 500-episode batch of the left-arm DP versus EMIX experiment matrix.
+# Run with:
+#   python scripts/run.py --config configs/scripts/run_cen_arm_top_cam.yaml
+#
+# Data is produced first by the batch assets pipeline
+#   python scripts/assets.py --variant cen_arm_top_cam --gpus 0 1 \
+#     --episodes 200 --image-width 84 --image-height 84
+# which also rewrites each task_config episode_num to 200, satisfying
+# validate().  The flow then reuses the complete collections/datasets/indexes
+# and goes straight to vis + train-eval.  The main 500-episode matrix config
+# stays in run.yaml.
+project:
+  robotwin_root: third_party/RoboTwin
+  runtime_config_root: configs/scripts/run/{task}
+  log_root: logs
+
+logging:
+  # Roll each worker's log into a new 000-000N.log once a single file exceeds
+  # this size, keeping long-running task logs readable.
+  rotate_bytes: 52428800  # 50 MiB
+
+environments:
+  # Absolute path prevents the caller's activated environment/PATH from
+  # selecting a different Conda installation.
+  conda_executable: /home/rogerspyke/miniforge3/bin/conda
+  # CONSTRAINT (do not relax): RoboTwin data collection and policy evaluation
+  # MUST run in emix-twin — it is the only env with the vendored curobo /
+  # RoboTwin runtime. Data preprocessing and model training MUST run in emix
+  # (sm_120-capable torch). Keep these four keys distinct; never fold
+  # evaluation back into `training`.
+  robotwin: emix-twin      # data collection   (RoboTwin + curobo)
+  preprocessing: emix      # data processing   (84x84 convert + emix index)
+  training: emix           # model training    (LeRobot diffusion)
+  evaluation: emix-twin    # policy evaluation (drives the RoboTwin benchmark env)
+  # No per-GPU pinning: scripts/oidn_env.py detects each card's compute
+  # capability at runtime and routes Blackwell (sm_120) GPUs to the
+  # emix-twin-5060 OIDN variant for the robotwin/evaluation keys, plus strips
+  # the stale /usr/local/cuda cuBLASLt from LD_LIBRARY_PATH for every stage on
+  # the card. GPU indices are deliberately not hardcoded — CUDA enumeration
+  # order differs from nvidia-smi and is not stable across installed cards.
+
+pipeline:
+  episodes_per_task: 500
+  image_width: 84
+  image_height: 84
+  collection_fps: 17
+  left_qpos_dim: 7
+  evaluation_episodes: 100
+  evaluation_seed: 0
+  save_evaluation_video: true
+  piper_distance: 0.6
+
+# Post-index visualization: every task with a complete EmixIndex is rendered
+# into outputs/intersections/<task>.html and then compiled to a crisp
+# outputs/intersections/<task>.png via headless Chrome (non-default: 2x device
+# scale, tall window, virtual-time budget, crop-to-content).  Each
+# visualization script owns its own outputs/ subfolder; batch pilots driven by
+# scripts/assets.py write under outputs/assets_vis/ instead, so batches never
+# mix.
+visualization:
+  output_root: outputs/intersections
+  camera: isometric          # 3D camera preset (front/top/side/isometric/close)
+  window_width: 2400         # Chrome CSS window width for the screenshot
+  window_height: 2800        # Chrome CSS window height (tall enough for all three figures)
+  device_scale_factor: 2     # hi-DPI scale for crisp text/markers
+  virtual_time_budget_ms: 120000  # ms of virtual time to let Plotly/WebGL finish
+  png_margin: 24             # device px of white margin kept around content after crop
+  chrome_timeout_s: 600      # wall-clock seconds to allow the Chrome render
+  # Performance guardrails (always applied by run.py's vis stage):
+  max_points: 10000          # cap drawn cross-point groups per HTML (uncapped 500k-group
+                             # indexes bloat the file and lag the browser)
+  skip_click_images: true    # skip click-to-inspect camera-image precompute (slowest
+                             # part of the render; figures in HTML/PNG are unaffected)
+
+training:
+  batch_size: 64
+  num_workers: 16
+  steps: 30000
+  save_freq: 5000
+  log_freq: 100
+  seed: 0
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  optimizer_lr: 0.0001
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+
+emix:
+  alpha_mode: beta
+  beta: 2
+  loss_weight: 1.0
+  state_mode: anchor
+  scheduler:
+    type: logarithmic
+    start_batch_prob: 0.6
+    end_batch_prob: 0.0
+
+# The flow enforces global phase barriers: all ten tasks collect and convert,
+# then one CPU/RAM-intensive EmixIndex queue completes, then both GPU queues
+# train and evaluate. Each GPU list remains serial inside the parallel phases.
+gpu_batches:
+  # 50/50 split: five tasks per card. The per-GPU queue stays serial inside
+  # each parallel phase. Within-batch order is applied automatically by
+  # flow.validate(): tasks whose dataset has fewer average frames per episode
+  # run first.
+  "0":
+    - blocks_ranking_rgb_left_cen_arm_top_cam
+    - place_bread_basket_left_cen_arm_top_cam
+    - place_burger_fries_left_cen_arm_top_cam
+    - place_cans_plasticbox_left_cen_arm_top_cam
+    - stack_blocks_two_left_cen_arm_top_cam
+  "1":
+    - blocks_ranking_size_left_cen_arm_top_cam
+    - place_bread_skillet_left_cen_arm_top_cam
+    - place_can_basket_left_cen_arm_top_cam
+    - place_dual_shoes_left_cen_arm_top_cam
+    - stack_bowls_two_left_cen_arm_top_cam

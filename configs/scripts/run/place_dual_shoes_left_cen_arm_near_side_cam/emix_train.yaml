@@ -1,0 +1,55 @@
+batch_size: 64
+num_workers: 16
+steps: 30000
+save_freq: 5000
+log_freq: 100
+output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/train/place_dual_shoes_left_cen_arm_near_side_cam_dp_emix
+policy:
+  type: emix_diffusion
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  use_group_norm: false
+  optimizer_lr: 0.0001
+  push_to_hub: false
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+dataset:
+  repo_id: place_dual_shoes_left_cen_arm_near_side_cam
+  root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/data/lerobot/place_dual_shoes_left_cen_arm_near_side_cam
+encoder_debug:
+  enabled: true
+  interval: 10000
+  max_samples: 4
+  output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/train/place_dual_shoes_left_cen_arm_near_side_cam_dp_emix/encoder_debug
+emix:
+  index_path: /home/rogerspyke/projects/EMIX/Embodied-Mixup/data/emix_index/place_dual_shoes_left_cen_arm_near_side_cam/emix_index.json
+  debug:
+    enabled: true
+    max_samples: 32
+    every_n_steps: 10000
+    image_keys: null
+    max_action_steps: 1
+    action_xyz_indices:
+    - 0
+    - 1
+    - 2
+    action_is_delta: true
+    min_display_fraction: 0.12
+    output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/train/place_dual_shoes_left_cen_arm_near_side_cam_dp_emix/debug
+  mixup:
+    alpha_mode: beta
+    beta: 2
+    alpha_value: null
+    loss_weight: 1.0
+    visual_keys:
+    - observation.images.head_camera
+    state_mode: anchor
+  training:
+    enabled: true
+    seed: 0
+    training_mode: mixed
+    scheduler:
+      type: logarithmic
+      start_batch_prob: 0.6
+      end_batch_prob: 0.0

@@ -1,0 +1,64 @@
+batch_size: 64
+num_workers: 16
+steps: 30000
+save_freq: 5000
+log_freq: 100
+output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/run_v0-singleTask-noiseVar0025Tr-emixDP-s5-seed0/train/place_bread_basket_left_cen_arm_top_cam_dp_baseline
+policy:
+  type: diffusion
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  use_group_norm: false
+  optimizer_lr: 0.0001
+  push_to_hub: false
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+  crop_shape: null
+  crop_is_random: true
+  down_dims:
+  - 512
+  - 1024
+  - 2048
+  kernel_size: 5
+  n_groups: 8
+  diffusion_step_embed_dim: 128
+  num_train_timesteps: 100
+  num_inference_steps: 100
+  noise_scheduler_type: DDPM
+  beta_schedule: squaredcos_cap_v2
+  prediction_type: epsilon
+  clip_sample: true
+  optimizer_betas:
+  - 0.95
+  - 0.999
+  optimizer_eps: 1.0e-08
+  optimizer_weight_decay: 1.0e-06
+  scheduler_name: cosine
+  scheduler_warmup_steps: 500
+dataset:
+  repo_id: place_bread_basket_left_cen_arm_top_cam
+  root: /home/rogerspyke/projects/EMIX/Embodied-Mixup/archive/DP-10tasks-500ep-emix-baseline-cen-arm-top-cam-20260911/data/lerobot/place_bread_basket_left_cen_arm_top_cam
+protocol:
+  family: v0
+  experiment: v0-singleTask-noise
+  id: v0-singleTask-noiseVar0025Tr-emixDP
+  parent: v0
+  task_set: s5
+  model: emixDP
+  training_noise: gaussian
+  evaluation_noise: none
+  noise_variance: 0.0025
+  selection_metric: historical-emix-minus-dp-percentage-points
+  execution_order:
+  - v0-singleTask-noiseVar0025Tr-emixDP
+  - v0-singleTask-noiseVar0025TrEv-emixDP
+  history_noise_status: unknown
+image_noise:
+  enabled: true
+  variance: 0.0025
+encoder_debug:
+  enabled: true
+  interval: 10000
+  max_samples: 4
+  output_dir: /home/rogerspyke/projects/EMIX/Embodied-Mixup/outputs/run_v0-singleTask-noiseVar0025Tr-emixDP-s5-seed0/train/place_bread_basket_left_cen_arm_top_cam_dp_baseline/encoder_debug
