@@ -427,6 +427,15 @@ def conda_command(
                     runtime_environment = {
                         str(key): str(value) for key, value in environment_runtime.items()
                     }
+    if (environment_name == oidn_env.EMIX_TWIN_5060_NAME
+            and environment_key in ("robotwin", "evaluation") and gpu):
+        # The collector/evaluator starts another Python process from inside
+        # `conda run`. Carry the 5060 runtime's libstdc++/CUDA paths explicitly
+        # through that hop; the activation hook alone is not inherited there.
+        twin_env = oidn_env.stage_environment(gpu)
+        for key in ("PATH", "CUDA_HOME", "LD_LIBRARY_PATH", "LD_PRELOAD"):
+            if key in twin_env:
+                runtime_environment.setdefault(key, twin_env[key])
     runtime_prefix = ["env"]
     runtime_prefix.extend(
         f"{key}={value}" for key, value in runtime_environment.items()
