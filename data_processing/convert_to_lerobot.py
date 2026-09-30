@@ -14,7 +14,10 @@ from tqdm import tqdm
 
 from embodied_mixup.datasets import default_repo_id_from_dataset_root
 from fix_stats import fix_lerobot_image_stats
-from data_processing.instance_annotations import InstanceAnnotations
+if __package__:
+    from .instance_annotations import InstanceAnnotations
+else:
+    from instance_annotations import InstanceAnnotations
 
 LOGGER = logging.getLogger(__name__)
 
