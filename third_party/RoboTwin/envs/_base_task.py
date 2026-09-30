@@ -458,6 +458,10 @@ class Base_Task(gym.Env):
             rgb = self.cameras.get_rgb()
             for camera_name in rgb.keys():
                 pkl_dic["observation"][camera_name].update(rgb[camera_name])
+        if self.save_data and os.environ.get("ROBOTWIN_COLLECT_INSTANCE_IDS") == "1":
+            actor_ids = self.cameras.get_raw_actor_ids()
+            for camera_name, camera_payload in actor_ids.items():
+                pkl_dic["observation"][camera_name].update(camera_payload)
 
         if self.data_type.get("third_view", False):
             third_view_rgb = self.cameras.get_observer_rgb()
@@ -557,6 +561,41 @@ class Base_Task(gym.Env):
 
         os.makedirs(f"{self.save_dir}/data", exist_ok=True)
         process_folder_to_hdf5_video(cache_path, target_file_path, target_video_path)
+        if os.environ.get("ROBOTWIN_COLLECT_INSTANCE_IDS") == "1":
+            entities = self.scene.get_entities()
+            actor_names = {
+                str(entity.get_per_scene_id()): f"scene:{entity.get_name()}:{entity.get_per_scene_id()}"
+                for entity in entities
+            }
+            # The task's own Actor wrappers identify the movable and target
+            # objects. Keep bowl1/bowl2 (and same-named blocks) distinct.
+            task_fields = set(getattr(getattr(self, "manifest", None), "actor_specs", {}))
+            for field, value in vars(self).items():
+                if field not in task_fields:
+                    continue
+                actor = getattr(value, "actor", None)
+                if actor is not None and hasattr(actor, "get_per_scene_id"):
+                    actor_names[str(actor.get_per_scene_id())] = f"task:{field}"
+            for field in task_fields:
+                if any(value == f"task:{field}" for value in actor_names.values()):
+                    continue
+                match = re.fullmatch(r"(.+?)(\d+)", field)
+                if match is None:
+                    continue
+                family, number = match.group(1), int(match.group(2))
+                values = getattr(self, family, None)
+                if not isinstance(values, (list, tuple)) or number >= len(values):
+                    continue
+                actor = getattr(values[number], "actor", None)
+                if actor is not None and hasattr(actor, "get_per_scene_id"):
+                    actor_names[str(actor.get_per_scene_id())] = f"task:{field}"
+            registered = {value.removeprefix("task:") for value in actor_names.values()
+                          if value.startswith("task:")}
+            missing = task_fields - registered
+            if missing:
+                raise ValueError(f"Missing task actor IDs for {sorted(missing)}")
+            with open(f"{self.save_dir}/data/episode{self.ep_num}.actor_names.json", "w", encoding="utf-8") as handle:
+                json.dump(actor_names, handle, ensure_ascii=False, sort_keys=True)
 
     def remove_data_cache(self):
         folder_path = self.folder_path["cache"]

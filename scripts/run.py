@@ -6,6 +6,9 @@ train-eval. The ``vis`` phase renders every task with a complete EmixIndex into
 ``outputs/intersections/<task>.png`` via headless Chrome
 (``scripts/render_vis_png.py``), so clustering can be
 inspected before training starts.
+The mandatory ``pre_vis`` stage saves the four V0 inspection views under
+each task/policy train and evaluation root before train-eval. Only the
+explicit ``--skip-pre-vis`` CLI option bypasses it.
 
 Resume behavior (simplest form, no strict validation):
     The train-eval phase reuses finished work instead of blindly re-running
@@ -68,8 +71,31 @@ DEFAULT_EMIX_VISUAL_KEYS = ["observation.images.head_camera"]
 
 
 def load_config(config_path: Path = FLOW_CONFIG) -> dict[str, Any]:
-    with config_path.open(encoding="utf-8") as handle:
-        config = yaml.safe_load(handle)
+    config_path = config_path.resolve()
+
+    def load_one(path: Path, stack: tuple[Path, ...]) -> dict[str, Any]:
+        if path in stack:
+            raise ValueError(f"Cyclic flow config inheritance: {path}")
+        with path.open(encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle)
+        if not isinstance(payload, dict):
+            raise ValueError(f"Flow config must be a mapping: {path}")
+        parent = payload.pop("extends", None)
+        if parent is None:
+            return payload
+        if not isinstance(parent, str) or not parent:
+            raise ValueError("extends must name one parent YAML")
+        base = load_one((path.parent / parent).resolve(), (*stack, path))
+
+        def merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+            result = copy.deepcopy(a)
+            for key, value in b.items():
+                result[key] = merge(result[key], value) if isinstance(value, dict) and isinstance(result.get(key), dict) else value
+            return result
+
+        return merge(base, payload)
+
+    config = load_one(config_path, ())
     if not isinstance(config, dict):
         raise ValueError("configs/scripts/run.yaml must contain a mapping")
     return normalize_config(resolve_config_references(config))
@@ -359,6 +385,13 @@ def command_env(config: dict[str, Any], gpu: str) -> dict[str, str]:
         if rt_denoiser not in ("oidn", "optix", "none"):
             raise ValueError("pipeline.rt_denoiser must be oidn, optix or none")
         env["ROBOTWIN_RT_DENOISER"] = rt_denoiser
+    if require_mapping(config, "pipeline").get("collect_instance_ids", False):
+        env["ROBOTWIN_COLLECT_INSTANCE_IDS"] = "1"
+    spatial_preset = (config.get("protocol") or {}).get("spatial_preset")
+    if spatial_preset is not None:
+        if spatial_preset not in ("legacy", "v0"):
+            raise ValueError("protocol.spatial_preset must be legacy or v0")
+        env["ROBOTWIN_CENTERED_PROTOCOL"] = spatial_preset
     # Blackwell GPUs: strip the stale /usr/local/cuda cuBLASLt that the
     # inherited LD_LIBRARY_PATH would otherwise shadow over torch's bundled
     # 12.8 (detected per card in scripts/oidn_env.py). Every stage on the
@@ -704,6 +737,7 @@ def train_config(task: str, config: dict[str, Any], *, emix: bool) -> dict[str, 
                 "alpha_mode": emix_cfg["alpha_mode"], "beta": emix_cfg["beta"],
                 "alpha_value": None, "loss_weight": emix_cfg["loss_weight"],
                 "visual_keys": emix_cfg["visual_keys"], "state_mode": emix_cfg["state_mode"],
+                "method": emix_cfg.get("method", "overlay"),
             },
             "training": {"enabled": True, "seed": training["seed"], "training_mode": "mixed", "scheduler": copy.deepcopy(emix_cfg["scheduler"])},
         }
@@ -763,11 +797,21 @@ def run_prepare_task(
     collection, dataset, _ = task_paths(task, config)
     episodes = int(pipeline["episodes_per_task"])
     collection_ready = completed_collection(collection, episodes)
+    if collection_ready and pipeline.get("collect_instance_ids", False):
+        collection_ready = all(
+            (collection / "data" / f"episode{index}.actor_names.json").is_file()
+            for index in range(episodes)
+        )
     if collection.exists() and not collection_ready:
         remove_artifact(collection, "RoboTwin collection")
     dataset_ready = completed_dataset(
         dataset, episodes, int(pipeline["image_width"]), int(pipeline["image_height"])
     )
+    if dataset_ready and pipeline.get("collect_instance_ids", False):
+        dataset_ready = all(
+            (dataset / "annotations" / "head_camera" / f"episode{index}.hdf5").is_file()
+            for index in range(episodes)
+        )
     if dataset.exists() and not dataset_ready:
         remove_artifact(dataset, "LeRobot dataset")
     stages: list[tuple[str, list[str]]] = []
@@ -776,9 +820,12 @@ def run_prepare_task(
     # dataset (e.g. restored from an archive) must not trigger a re-collection
     # just because the raw hdf5 collections are not on disk.
     if not dataset_ready and not collection_ready:
-        stages.append(("collect", conda_command(config, "robotwin", gpu, "python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu)))
+        stages.append(("collect", conda_command(config, "robotwin", gpu, "python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu, "--output-root", str(configured_path(config, "collection_root", task)))))
     if not dataset_ready:
-        stages.append(("convert-84x84", conda_command(config, "preprocessing", gpu, "python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"]))))
+        convert_command = conda_command(config, "preprocessing", gpu, "python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"]))
+        if pipeline.get("collect_instance_ids", False):
+            convert_command.append("--instance-annotations")
+        stages.append(("convert-84x84", convert_command))
     print(f"[flow] prepare / GPU {gpu}: task {task_index}/{task_total} started: {task}", flush=True)
     if collection_ready:
         message = f"[flow] prepare / GPU {gpu}: reusing complete collection: {collection}\n"
@@ -928,6 +975,60 @@ def eval_output_dir(task: str, config: dict[str, Any], *, emix: bool) -> Path:
     return configured_path(config, "eval_root", f"{task}_dp_{kind}")
 
 
+def run_pre_vis_task(task: str, gpu: str, config: dict[str, Any], *,
+                     emix: bool, destination: Path, train_config_path: Path,
+                     log: RotatingLog) -> None:
+    """Require the four V0 views beside this policy's train/eval artifacts."""
+    sample_config = yaml.safe_load(train_config_path.read_text())
+    identity = {"dataset": sample_config.get("dataset"),
+                "policy": sample_config.get("policy"),
+                "image_noise": sample_config.get("image_noise"),
+                "emix": sample_config.get("emix")}
+    if (destination / "complete.json").is_file():
+        required = ("input_samples.png", "intersections.png", "pick_place.png",
+                    "first_frame_range.png")
+        try:
+            record = json.loads((destination / "complete.json").read_text())
+        except (ValueError, OSError):
+            record = {}
+        if record.get("identity") == identity and all(
+            (destination / name).is_file() and (destination / name).stat().st_size > 0
+            for name in required
+        ):
+            return
+    _, dataset, index = task_paths(task, config)
+    if not dataset.is_dir() or not (index / "emix_index.json").is_file():
+        raise FileNotFoundError(f"pre_vis requires dataset and EmixIndex for {task}")
+    # The existing intersection renderer is index-backed. Reuse its finished
+    # image, but copy it into each policy's artifact package.
+    run_vis_task(task, gpu, config, task_index=1, task_total=1, log=log)
+    intersection_html, intersection_png = vis_output_paths(task, config)
+    destination.mkdir(parents=True, exist_ok=True)
+    commands = [
+        ("input-samples", conda_command(
+            config, "preprocessing", gpu, "python", "scripts/pre_vis_sample.py",
+            "--train-config", str(train_config_path), "--output", str(destination / "input_samples.png"))),
+        ("first-frame-range", conda_command(
+            config, "preprocessing", gpu, "python", "-m", "embodied_mixup.visualization.first_frame_average",
+            "--root", str(dataset), "--output", str(destination / "first_frame_range.png"))),
+        ("pick-place", conda_command(
+            config, "preprocessing", gpu, "python", "-m", "embodied_mixup.visualization.plot_actions",
+            "--root", str(dataset), "--output", str(destination / "pick_place.html"),
+            "--png", str(destination / "pick_place.png"))),
+    ]
+    for label, command in commands:
+        if label == "input-samples" or not (destination / ({"first-frame-range": "first_frame_range.png", "pick-place": "pick_place.png"}.get(label, "input_samples.png"))).is_file():
+            run(command, gpu=gpu, log=log, config=config)
+    shutil.copy2(intersection_png, destination / "intersections.png")
+    shutil.copy2(intersection_html, destination / "intersections.html")
+    required = ("input_samples.png", "intersections.png", "pick_place.png", "first_frame_range.png")
+    if not all((destination / name).is_file() and (destination / name).stat().st_size > 0 for name in required):
+        raise RuntimeError(f"pre_vis is incomplete: {destination}")
+    (destination / "complete.json").write_text(json.dumps({"task": task,
+        "policy": "emix" if emix else "baseline", "artifacts": list(required),
+        "identity": identity}, indent=2))
+
+
 def completed_evaluation(task: str, config: dict[str, Any], *, emix: bool) -> bool:
     """Return whether evaluation wrote a metrics.json (simplest check)."""
     return any(eval_output_dir(task, config, emix=emix).glob("*/metrics.json"))
@@ -982,7 +1083,9 @@ def run_training_task(
             print(message, end="", flush=True)
         else:
             incomplete_train = train_output_dir(task, config, emix=emix)
-            if incomplete_train.exists():
+            if incomplete_train.exists() and any(
+                item.name != "pre_vis" for item in incomplete_train.iterdir()
+            ):
                 remove_artifact(incomplete_train, f"incomplete {kind} training", log)
             stages.append(
                 (
@@ -1002,7 +1105,9 @@ def run_training_task(
             print(message, end="", flush=True)
         else:
             incomplete_eval = eval_output_dir(task, config, emix=emix)
-            if incomplete_eval.exists():
+            if incomplete_eval.exists() and any(
+                item.name != "pre_vis" for item in incomplete_eval.iterdir()
+            ):
                 remove_artifact(incomplete_eval, f"incomplete {kind} evaluation", log)
             stages.append(
                 (
@@ -1015,6 +1120,14 @@ def run_training_task(
             )
     for stage_index, (stage_name, command) in enumerate(stages, start=1):
         print(f"[flow] GPU {gpu}: task {task_index}/{task_total} | stage {stage_index}/{len(stages)}: {stage_name}", flush=True)
+        kind = stage_name.split("-", 1)[0]
+        is_emix = kind == "emix"
+        destination = (train_output_dir(task, config, emix=is_emix)
+                       if stage_name.endswith("-train") else eval_output_dir(task, config, emix=is_emix))
+        if not config.get("_skip_pre_vis", False):
+            run_pre_vis_task(task, gpu, config, emix=is_emix,
+                             destination=destination / "pre_vis",
+                             train_config_path=configs[f"{kind}_train"], log=log)
         run(command, gpu=gpu, log=log, config=config)
     print(f"[flow] train-eval / GPU {gpu}: task {task_index}/{task_total} completed: {task}", flush=True)
 
@@ -1303,7 +1416,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--phase", type=str, default=None,
-        choices=["prepare", "index", "vis", "train-eval", "summary"],
+        choices=["prepare", "index", "vis", "pre_vis", "train-eval", "summary"],
         help="Run only this single phase over all configured tasks and exit. "
              "Skips the environment/GPU validation so a stage can be backfilled "
              "over existing data, e.g. `python scripts/run.py --phase vis`.",
@@ -1315,6 +1428,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config", type=Path, default=FLOW_CONFIG,
         help="Flow configuration YAML to run (default: configs/scripts/run.yaml).",
+    )
+    parser.add_argument(
+        "--skip-pre-vis", action="store_true",
+        help="Explicitly bypass mandatory pre_vis artifacts for this invocation.",
     )
     return parser.parse_args()
 
@@ -1330,6 +1447,22 @@ def run_single_phase(config: dict[str, Any], phase: str, log_directory: Path, cu
     if phase == "summary":
         run_phase("summary", {next(iter(batches)): []}, config, log_directory)
         return
+    if phase == "pre_vis":
+        log = RotatingLog(log_directory, 0, DEFAULT_LOG_ROTATE_BYTES)
+        try:
+            for gpu, work in batches.items():
+                for task in work:
+                    configs = write_runtime_configs(task, config)
+                    if not config.get("_skip_pre_vis", False):
+                        for kind, emix in selected_policies(config):
+                            for destination in (train_output_dir(task, config, emix=emix),
+                                                eval_output_dir(task, config, emix=emix)):
+                                run_pre_vis_task(task, gpu, config, emix=emix,
+                                    destination=destination / "pre_vis",
+                                    train_config_path=configs[f"{kind}_train"], log=log)
+        finally:
+            log.close()
+        return
     if phase in ("index", "vis"):
         all_tasks = sorted(
             (task for tasks in batches.values() for task in tasks),
@@ -1343,6 +1476,7 @@ def run_single_phase(config: dict[str, Any], phase: str, log_directory: Path, cu
 def main() -> None:
     args = parse_args()
     config = load_config(args.config.resolve())
+    config["_skip_pre_vis"] = args.skip_pre_vis
     cuda = configured_cuda(config, args.cuda)
     log_root = configured_path(config, "log_root")
     lock_name = ".flow-cuda-" + "-".join(cuda) + ".lock"
@@ -1372,6 +1506,8 @@ def main() -> None:
         )
         run_phase("index", {next(iter(batches)): all_tasks}, config, log_directory)
         run_phase("vis", {next(iter(batches)): all_tasks}, config, log_directory)
+        if not args.skip_pre_vis:
+            run_single_phase(config, "pre_vis", log_directory, cuda)
         run_phase("train-eval", batches, config, log_directory)
         run_phase("summary", {next(iter(batches)): []}, config, log_directory)
 

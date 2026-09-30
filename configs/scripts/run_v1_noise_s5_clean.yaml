@@ -1,0 +1,24 @@
+extends: run_v1_collage_s5.yaml
+project:
+  run_label: v1-noise-s5-train-noise-eval-clean
+  runtime_config_root: configs/scripts/run/v1-noise-s5-clean/{task}
+  train_root: outputs/run_v1-noise/train/{task}
+  eval_root: outputs/run_v1-noise/eval-clean/{task}
+pipeline:
+  policies: [baseline, emix]
+training:
+  image_noise: {enabled: true, variance: 0.0025}
+emix:
+  method: overlay
+evaluation:
+  image_noise: {enabled: false}
+  image_noise_seed: 0
+protocol:
+  experiment: v1-noise
+  id: v1-noise-s5-train-noise-eval-clean
+  task_set: s5
+  training_noise: gaussian
+  evaluation_noise: none
+  noise_variance: 0.0025
+  emix_method: overlay
+  emix_loss: alpha*loss1+(1-alpha)*loss2

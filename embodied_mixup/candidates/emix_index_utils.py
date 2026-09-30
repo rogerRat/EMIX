@@ -47,13 +47,16 @@ _SKLEARN_HDBSCAN_MIN_PAIRS = 2_000_000
 
 
 def compute_source_dataset_fingerprint(dataset_root: str | Path) -> dict[str, Any]:
-    """Compute a strict source dataset fingerprint.
+    """Compute a field-level source dataset fingerprint.
 
     @input: dataset_root [str|Path], exact LeRobotDataset root.
     @output: dict with algorithm, included_roots, file_count, total_bytes,
-        dataset_sha256, files.
-    @scenario: Bind an EmixIndex to the exact source dataset content used for
-        index construction and training.
+        dataset_summary, files (relative_path + size_bytes per file).
+    @scenario: Bind an EmixIndex to the source dataset used for index
+        construction and training.  Field-level identity per user decision
+        2026-09-30: protocols are validated by their parameter values, not
+        by content hashes; per-file size plus the dataset-level counts are
+        the identity that is checked.
     """
 
     dataset_root = Path(dataset_root).expanduser().resolve()
@@ -72,30 +75,27 @@ def compute_source_dataset_fingerprint(dataset_root: str | Path) -> dict[str, An
             top = rel.split("/")[0]
             if top in _FINGERPRINT_EXCLUDED_PREFIXES:
                 continue
-            size = fpath.stat().st_size
-            sha = hashlib.sha256(fpath.read_bytes()).hexdigest()
-            file_records.append({"relative_path": rel, "sha256": sha, "size_bytes": size})
+            file_records.append({"relative_path": rel, "size_bytes": fpath.stat().st_size})
 
     # Sort by POSIX relative path for determinism
     file_records.sort(key=lambda r: r["relative_path"])
 
-    summary_json = json.dumps(file_records, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    dataset_sha256 = hashlib.sha256(summary_json).hexdigest()
     total_bytes = sum(r["size_bytes"] for r in file_records)
+    dataset_summary = f"files={len(file_records)};bytes={total_bytes}"
 
     logger.info(
-        "[candidates.index] Source dataset fingerprint complete: files=%d bytes=%d sha256=%s",
+        "[candidates.index] Source dataset fingerprint complete: files=%d bytes=%d summary=%s",
         len(file_records),
         total_bytes,
-        dataset_sha256,
+        dataset_summary,
     )
 
     return {
-        "algorithm": "sha256",
+        "algorithm": "fields",
         "included_roots": list(_FINGERPRINT_INCLUDED_ROOTS),
         "file_count": len(file_records),
         "total_bytes": total_bytes,
-        "dataset_sha256": dataset_sha256,
+        "dataset_summary": dataset_summary,
         "files": file_records,
     }
 
@@ -107,20 +107,40 @@ def validate_source_dataset_fingerprint(
     """Validate a source dataset root against an expected fingerprint.
 
     @input: expected [dict], dataset_root [str|Path].
-    @output: None on exact match; raises ValueError on mismatch.
-    @scenario: Stop EMIX training when the source data no longer matches the EmixIndex.
+    @output: None on field-level match; raises ValueError on mismatch.
+    @scenario: Stop EMIX training when the source data no longer matches the
+        EmixIndex.  Compares per-file (relative_path, size_bytes) records and
+        the dataset-level counts; legacy fingerprints that still carry sha256
+        fields are compared field-by-field with the hash entries ignored.
     """
 
     dataset_root = Path(dataset_root).expanduser().resolve()
     logger.info("[emix.loader] Validating source dataset fingerprint for %s", dataset_root)
     actual = compute_source_dataset_fingerprint(dataset_root)
-    expected_sha = expected.get("dataset_sha256", "")
-    actual_sha = actual["dataset_sha256"]
-    if expected_sha != actual_sha:
+
+    def _field_map(fingerprint: dict[str, Any]) -> dict[str, int]:
+        records = fingerprint.get("files") or []
+        return {
+            str(record.get("relative_path")): int(record.get("size_bytes", -1))
+            for record in records
+            if record.get("relative_path")
+        }
+
+    expected_map = _field_map(expected)
+    actual_map = _field_map(actual)
+    added = sorted(set(actual_map) - set(expected_map))
+    removed = sorted(set(expected_map) - set(actual_map))
+    size_changed = sorted(
+        path for path in set(expected_map) & set(actual_map)
+        if expected_map[path] != actual_map[path]
+    )
+    if added or removed or size_changed:
         raise ValueError(
             "Source dataset fingerprint mismatch\n"
-            f"expected dataset_sha256={expected_sha}\n"
-            f"actual dataset_sha256={actual_sha}\n"
+            f"added={added[:10]}\nremoved={removed[:10]}\n"
+            f"size_changed={size_changed[:10]}\n"
+            f"expected file_count={expected.get('file_count')} "
+            f"actual file_count={actual['file_count']}\n"
             f"dataset_root={dataset_root}"
         )
     logger.info("[emix.loader] Source dataset fingerprint validated")
@@ -134,7 +154,7 @@ def inspect_source_dataset(
 
     @input: dataset [LeRobotDataset-like object], root [path-like|None].
     @output: (EmixSourceDatasetDeclaration, fingerprint_dict).
-    @scenario: Capture source dataset repo, path, strict sha256 fingerprint, and media contract.
+    @scenario: Capture source dataset repo, path, field-level fingerprint, and media contract.
     """
 
     repo_id = str(getattr(dataset, "repo_id", "") or "")
@@ -168,12 +188,12 @@ def inspect_source_dataset(
     )
 
     fingerprint = compute_source_dataset_fingerprint(dataset_root)
-    source_sha256 = fingerprint["dataset_sha256"]
+    source_summary = fingerprint["dataset_summary"]
 
     declaration = EmixSourceDatasetDeclaration(
         repo_id=repo_id,
         root=str(dataset_root),
-        hash=source_sha256,
+        hash=source_summary,
         media=media,
     )
     return declaration, fingerprint
@@ -422,7 +442,7 @@ def build_emix_index(
     index_id = make_emix_index_id(
         source_repo_id=source_dataset.repo_id,
         dataset_length=int(len(dataset.hf_dataset)),
-        source_dataset_sha256=fingerprint["dataset_sha256"],
+        source_dataset_summary=fingerprint["dataset_summary"],
         config_snapshot=config_snapshot,
     )
 
@@ -663,7 +683,7 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
     index_id = make_emix_index_id(
         source_repo_id=source_dataset.repo_id,
         dataset_length=int(len(dataset.hf_dataset)),
-        source_dataset_sha256=fingerprint["dataset_sha256"],
+        source_dataset_summary=fingerprint["dataset_summary"],
         config_snapshot=config_snapshot,
     )
     created_at = datetime.now(UTC_PLUS_8).strftime("%Y-%m-%dT%H:%M:%S%z")

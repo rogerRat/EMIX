@@ -64,6 +64,11 @@ def create_hdf5_from_dict(hdf5_group, data_dict):
             if "rgb" in key:
                 encode_data, max_len = images_encoding(value)
                 hdf5_group.create_dataset(key, data=encode_data, dtype=f"S{max_len}")
+            elif key == "actor_ids":
+                if value.ndim != 3 or value.dtype.kind not in "ui":
+                    raise ValueError("actor_ids must be integer [T,H,W]")
+                hdf5_group.create_dataset(key, data=value, chunks=(1, *value.shape[1:]),
+                                          compression="gzip", compression_opts=1, shuffle=True)
             else:
                 hdf5_group.create_dataset(key, data=value)
         else:

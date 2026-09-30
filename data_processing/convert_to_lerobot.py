@@ -14,6 +14,7 @@ from tqdm import tqdm
 
 from embodied_mixup.datasets import default_repo_id_from_dataset_root
 from fix_stats import fix_lerobot_image_stats
+from data_processing.instance_annotations import InstanceAnnotations
 
 LOGGER = logging.getLogger(__name__)
 
@@ -141,6 +142,39 @@ def _load_episode(path, image_width, image_height, left_qpos_dim):
     }
 
 
+def _convert_instance_annotations(path, target_root, repo_id, image_width, image_height,
+                                  frame_count):
+    """Convert the paired renderer IDs using the same frame indices as policy RGB."""
+    names_path = path.with_suffix(".actor_names.json")
+    with h5py.File(path, "r") as handle:
+        key = "observation/head_camera/actor_ids"
+        if key not in handle:
+            raise ValueError(f"{path} has no {key}; V1 collection requires instance IDs")
+        raw = np.asarray(handle[key][:frame_count], dtype=np.uint32)
+    if raw.shape[0] != frame_count:
+        raise ValueError(f"{path} actor IDs have {raw.shape[0]} frames, expected {frame_count}")
+    if not names_path.is_file():
+        raise FileNotFoundError(f"Missing paired actor names: {names_path}")
+    names = json.loads(names_path.read_text(encoding="utf-8"))
+    if not isinstance(names, dict):
+        raise ValueError(f"Invalid actor name table: {names_path}")
+    renderer_objects = {int(key): str(value) for key, value in names.items()}
+    renderer_objects[0] = "background"
+    annotations = InstanceAnnotations.from_renderer(
+        raw, renderer_objects=renderer_objects, dataset_id=repo_id,
+        episode_id=path.stem, camera="head_camera", frame_ids=np.arange(frame_count),
+    )
+    # Nearest-neighbour labels use the same output dimensions as RGB. The
+    # unavoidable mixed-pixel ambiguity at downsampling boundaries is retained.
+    ys = np.minimum(((np.arange(image_height) + .5) * raw.shape[1] / image_height).astype(int), raw.shape[1] - 1)
+    xs = np.minimum(((np.arange(image_width) + .5) * raw.shape[2] / image_width).astype(int), raw.shape[2] - 1)
+    from dataclasses import replace
+    annotations = replace(annotations, labels=annotations.labels[:, ys[:, None], xs[None, :]],
+                          history=({"size": [image_width, image_height]},))
+    annotations.validate()
+    annotations.save(target_root / "annotations" / "head_camera" / f"{path.stem}.hdf5")
+
+
 def _create_dataset(repo_id, root, fps, sample):
     """Create the target LeRobot dataset schema.
 
@@ -219,6 +253,9 @@ def main(args):
     dataset = _create_dataset(repo_id, str(root), args.fps, first)
     for path in tqdm(episodes, desc="Converting RoboTwin episodes"):
         episode = _load_episode(path, args.image_width, args.image_height, args.left_qpos_dim)
+        if getattr(args, "instance_annotations", False):
+            _convert_instance_annotations(path, root, repo_id, args.image_width,
+                                          args.image_height, len(episode["images"]))
         for index in range(len(episode["action"])):
             dataset.add_frame({
                 "observation.images.head_camera": episode["images"][index],
@@ -281,4 +318,6 @@ if __name__ == "__main__":
     parser.add_argument("--image-height", type=int, default=84)
     parser.add_argument("--fps", type=int, default=17, help="Approximate 250 Hz / save_freq 15 source rate.")
     parser.add_argument("--left-qpos-dim", type=int, default=7, help="Left Piper arm-plus-gripper dimensions.")
+    parser.add_argument("--instance-annotations", action="store_true",
+                        help="Require and convert paired raw actor IDs into compressed labels.")
     main(parser.parse_args())

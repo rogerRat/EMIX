@@ -54,22 +54,23 @@ def make_emix_group_id(
 def make_emix_index_id(
     source_repo_id: str,
     dataset_length: int,
-    source_dataset_sha256: str,
+    source_dataset_summary: str,
     config_snapshot: dict,
 ) -> str:
     """Build a deterministic EmixIndex identifier.
 
     @input: source_repo_id [str], dataset_length [int],
-        source_dataset_sha256 [str] strict sha256 fingerprint of source dataset,
+        source_dataset_summary [str] field-level identity of the source
+        dataset (file/byte counts per user decision 2026-09-30),
         config_snapshot [dict] candidate generation config without window_len.
     @output: str id that changes when source data or config changes.
-    @scenario: Bind the index id to exact source content and config.
+    @scenario: Bind the index id to the source dataset identity and config.
     """
     raw = json.dumps(
         {
             "source_repo_id": str(source_repo_id),
             "dataset_length": int(dataset_length),
-            "source_dataset_sha256": str(source_dataset_sha256),
+            "source_dataset_summary": str(source_dataset_summary),
             "config_snapshot": config_snapshot,
         },
         sort_keys=True,

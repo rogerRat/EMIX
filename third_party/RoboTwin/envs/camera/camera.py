@@ -374,6 +374,17 @@ class Camera:
         return _get_rgb(self.observer_camera)
 
     # Get Camera Segmentation
+    def get_raw_actor_ids(self) -> dict:
+        """Return the renderer's full actor IDs, aligned with the current RGB frame."""
+        result = {}
+        if self.collect_wrist_camera:
+            result["left_camera"] = {"actor_ids": self.left_camera.get_picture("Segmentation")[..., 1].astype(np.uint32)}
+            result["right_camera"] = {"actor_ids": self.right_camera.get_picture("Segmentation")[..., 1].astype(np.uint32)}
+        for camera, camera_name in zip(self.static_camera_list, self.static_camera_name):
+            if camera_name != "head_camera" or self.collect_head_camera:
+                result[camera_name] = {"actor_ids": camera.get_picture("Segmentation")[..., 1].astype(np.uint32)}
+        return result
+
     def get_segmentation(self, level="mesh") -> dict:
 
         def _get_segmentation(camera, level="mesh"):

@@ -299,6 +299,7 @@ def main(args):
     output = output_dir / f"{task_name}_{Path(checkpoint).name}_{datetime.now(timezone(timedelta(hours=8))).strftime('%Y%m%d%H%M%S')}"
     output.mkdir(parents=True, exist_ok=False)
     successes, records, seed, accepted = 0, [], seed_value * 100000 + 100000, 0
+    saved_first_policy_input = False
     while accepted < episodes:
         task, task_cfg = _build_task(task_name, task_config, piper_distance, benchmark_root)
         try:
@@ -340,6 +341,11 @@ def main(args):
                     noise_seed=image_noise_seed + seed * 1_000_000,
                     noise_step=task.take_action_cnt + 1,
                 )
+                if not saved_first_policy_input and (output_dir / "pre_vis").is_dir():
+                    image = policy_obs["observation.images.head_camera"][0]
+                    preview = (image.permute(1, 2, 0).cpu().numpy().clip(0, 1) * 255).round().astype(np.uint8)
+                    cv2.imwrite(str(output_dir / "pre_vis" / "actual_eval_input.png"), cv2.cvtColor(preview, cv2.COLOR_RGB2BGR))
+                    saved_first_policy_input = True
                 action = _policy_action(policy, preprocessor, postprocessor, policy_obs, device)
                 if action.shape != home_qpos.shape:
                     raise ValueError(f"Checkpoint action shape {action.shape} does not match RoboTwin qpos shape {home_qpos.shape}.")

@@ -11,7 +11,6 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone, timedelta
 import fcntl
-import hashlib
 import importlib.metadata
 import json
 from pathlib import Path
@@ -31,12 +30,44 @@ def timestamp() -> str:
     return datetime.now(timezone(timedelta(hours=8))).isoformat(timespec="seconds")
 
 
-def file_hash(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def protocol_snapshot(config: dict) -> dict:
+    """Extract the protocol-relevant config fields for cross-checking.
+
+    Field-level replacement for the former source-file sha256 gate (user
+    decision 2026-09-30): the experiment contract is defined by parameter
+    values, not by code content hashes.
+    """
+    training = flow.require_mapping(config, "training")
+    pipeline = flow.require_mapping(config, "pipeline")
+    evaluation = flow.require_mapping(config, "evaluation")
+    return {
+        "tasks": list(config["tasks"]),
+        "policies": [kind for kind, _ in flow.selected_policies(config)],
+        "episodes_per_task": pipeline["episodes_per_task"],
+        "image_width": pipeline["image_width"],
+        "image_height": pipeline["image_height"],
+        "evaluation_episodes": pipeline["evaluation_episodes"],
+        "evaluation_seed": pipeline["evaluation_seed"],
+        "training": {key: training[key] for key in sorted(training)},
+        "evaluation_image_noise": evaluation.get("image_noise"),
+        "evaluation_image_noise_seed": evaluation.get("image_noise_seed"),
+        "emix": config.get("emix"),
+        "train_root": config["paths"]["train_root"],
+        "eval_root": config["paths"]["eval_root"],
+        "dataset_root": config["paths"]["dataset_root"],
+        "index_root": config["paths"].get("index_root"),
+    }
+
+
+def dataset_summary(dataset: Path) -> dict:
+    """Field-level dataset identity: counts and sizes, no content hashing."""
+    files = [path for folder in ("meta", "data", "videos")
+             for path in (dataset / folder).rglob("*") if path.is_file()]
+    return {
+        "file_count": len(files),
+        "total_bytes": sum(path.stat().st_size for path in files),
+        "episode_files": len([path for path in files if path.suffix == ".parquet"]),
+    }
 
 
 def collect_results(configs: dict, emix: bool) -> dict:
@@ -145,12 +176,12 @@ def main() -> None:
                 ROOT / "evaluation/evaluate.py", ROOT / "scripts/run.py",
                 ROOT / "scripts/oidn_env.py", ROOT / "scripts/run_noise_experiment.py",
             ]
-            hashes = {str(path.relative_to(ROOT)): file_hash(path) for path in sources}
+            field_snapshots = {condition: protocol_snapshot(configs[condition]) for condition in CONDITIONS}
             provenance = {
                 "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "robotwin_commit": subprocess.check_output(["git", "-C", "third_party/RoboTwin", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "git_status": subprocess.check_output(["git", "status", "--short"], cwd=ROOT, text=True),
-                "source_sha256": hashes, "python": sys.executable,
+                "protocol_fields": field_snapshots, "python": sys.executable,
                 "packages": {name: importlib.metadata.version(name) for name in ("torch", "torchvision", "lerobot", "diffusers", "numpy")},
                 "gpu_runtime": {},
                 "datasets": {},
@@ -159,8 +190,7 @@ def main() -> None:
                 _, dataset, _ = flow.task_paths(task, first)
                 if not flow.completed_dataset(dataset, 500, 84, 84):
                     raise ValueError(f"Dataset does not meet the approved 500ep/84x84 contract: {dataset}")
-                files = [path for folder in ("meta", "data", "videos") for path in (dataset / folder).rglob("*") if path.is_file()]
-                provenance["datasets"][task] = {str(path.relative_to(dataset)): file_hash(path) for path in files}
+                provenance["datasets"][task] = dataset_summary(dataset)
             for gpu in flow.configured_cuda(first):
                 probe = "import json, torch; print(json.dumps({'name':torch.cuda.get_device_name(0), 'capability':torch.cuda.get_device_capability(0), 'torch':torch.__version__}))"
                 detected = json.loads(subprocess.check_output(
@@ -178,9 +208,8 @@ def main() -> None:
                 shutil.copy2(path, target)
             flow.validate(first, flow.configured_cuda(first))
             for condition in CONDITIONS:
-                for relative, expected in hashes.items():
-                    if file_hash(ROOT / relative) != expected:
-                        raise RuntimeError(f"Source changed during the experiment: {relative}")
+                if protocol_snapshot(configs[condition]) != field_snapshots[condition]:
+                    raise RuntimeError(f"Protocol fields changed during the experiment: {condition}")
                 config = configs[condition]
                 state.update(status="running", condition=condition)
                 print(f"[{timestamp()}] Starting {condition}", flush=True)

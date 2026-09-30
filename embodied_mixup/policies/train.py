@@ -504,6 +504,7 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
             mixup_beta=float(cfg.policy_cfg.mixup_beta),
             mixup_visual_keys=cfg.policy_cfg.mixup_visual_keys,
             mixup_state_mode=str(cfg.policy_cfg.mixup_state_mode),
+            mixup_method=str(cfg.policy_cfg.mixup_method),
             seed=0,
         )
         dataset = make_emix_loader(
@@ -547,6 +548,7 @@ def _build_emix_dataset(cfg: EmixTrainConfig):
         mixup_beta=float(cfg.policy_cfg.mixup_beta),
         mixup_visual_keys=cfg.policy_cfg.mixup_visual_keys,
         mixup_state_mode=str(cfg.policy_cfg.mixup_state_mode),
+        mixup_method=str(cfg.policy_cfg.mixup_method),
         seed=0,
     )
     dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))
@@ -674,7 +676,9 @@ def _write_train_config_snapshot(cfg: EmixTrainConfig) -> Path:
 
 def _prepare_output_dir(output_dir: Path) -> Path:
     output_dir = output_dir.expanduser().resolve()
-    if output_dir.exists() and any(output_dir.iterdir()):
+    # Flow's mandatory pre_vis package is generated before training and lives
+    # beside checkpoints. No other pre-existing training artifact is allowed.
+    if output_dir.exists() and any(p.name != "pre_vis" for p in output_dir.iterdir()):
         raise FileExistsError(f"Output directory already exists and is not empty: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir

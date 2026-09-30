@@ -1,0 +1,19 @@
+extends: run_v1_overlay_s5.yaml
+project:
+  run_label: v1-overlay-all10
+gpu_batches:
+  "0":
+    - blocks_ranking_rgb_left_cen_arm_top_cam
+    - place_bread_basket_left_cen_arm_top_cam
+    - place_burger_fries_left_cen_arm_top_cam
+    - place_cans_plasticbox_left_cen_arm_top_cam
+    - stack_blocks_two_left_cen_arm_top_cam
+  "1":
+    - blocks_ranking_size_left_cen_arm_top_cam
+    - place_bread_skillet_left_cen_arm_top_cam
+    - place_can_basket_left_cen_arm_top_cam
+    - place_dual_shoes_left_cen_arm_top_cam
+    - stack_bowls_two_left_cen_arm_top_cam
+protocol:
+  id: v1-overlay-all10
+  task_set: all10

@@ -6,17 +6,17 @@ variation.
 
 Initial ranges are the source task ranges shifted into the left-arm workspace
 (the active left Piper sits at x=-0.30 m) and kept inside the arm's reliable
-reach.  Any range/yaw change must be accompanied by a pilot result, a version
-increase, and a new hash.
+reach.  Any range/yaw change must be accompanied by a pilot result and a
+version increase.  Validation is field-level (exact x/y/yaw/clearance/static
+values, see tests/test_left_task_base.py); content hashing is deliberately
+not used anywhere in the protocol.
 
 ``scan_object`` is explicitly excluded from this project and has no manifest.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-from dataclasses import asdict
+import os
 from dataclasses import replace
 from typing import Mapping
 
@@ -100,6 +100,215 @@ CENTERED_FAMILY_OVERRIDES: dict[str, dict[str, XYYawRange]] = {
         "bowl2": XYYawRange(x=(-0.20, 0.05), y=(-0.15, 0.00), yaw_rad=(0.0, 0.00)),
     },
 }
+
+# ---------------------------------------------------------------------------
+# V0 centred-batch randomization protocol (base-relative, base-1 draft,
+# 2026-09-30).
+#
+# COORDINATE SEMANTICS (user decision 2026-09-30): every CENTERED_V0_OVERRIDES
+# entry is expressed RELATIVE TO THE ACTIVE PIPER BASE, not the table centre.
+# This is exactly the historical batches' semantics (their spawn bands were
+# symmetric about the arm position, e.g. blocks x(-0.45,-0.16) about x=-0.30,
+# and plasticbox v4 was "mirror-symmetric about x=-0.26, the closest feasible
+# analogue of table-centre symmetry"), and it is what makes large absolute
+# ranges reachable: the workspace is a reach disc centred on the base, so
+# base-relative bands stay inside the disc by construction.
+#
+#   x: symmetric about the base x (the centred batch base sits at x=0, so
+#      base-relative x numerically equals the world x);
+#   y: a FORWARD-DISTANCE BAND from the base, positive = in front of the
+#      base.  y CANNOT be base-symmetric: the base stands at the table's near
+#      edge (world y=-0.45, tabletop y>=-0.35), so the table only exists in
+#      front of the base.  Absolute y = CENTERED_V0_BASE_XY[1] + y_rel.
+#
+# Reach model used for the base-1 drafts (from the 2026-09-30 pilot decay
+# data): reliable success needs actor-base distance <= ~0.5-0.55 m; the
+# near-arm strip (abs y in [-0.32,-0.15], i.e. 0.13-0.30 m in front of the
+# base) is the highest-success zone and was wasted by the table-centre
+# symmetric drafts.  Hard bounds: tabletop y>=-0.35 (y_rel >= ~0.10 plus
+# footprint margin), top-camera frame abs y<=+0.34 / x<=+0.49, tabletop
+# x in [-0.60,0.60].
+#
+# Acceptance rule (user decision 2026-09-29): a 100-seed pilot must reach
+# success rate >= 0.20; below that the range converges, above it the range
+# may be widened.  Pilot evidence lands in results/pilot/v0_ranges/ and
+# docs/_exp.md before any value is promoted from draft.
+#
+# Known physically-locked exceptions (no v0 entry, impl hardcodes stay):
+# - place_dual_shoes: shoes snap to lift-verified rows abs y in {0.13,0.14}
+#   (grasp+lift probe diag_ds_fullmap.py); y is not free to randomize.
+# - stack_bowls_two: keeps its historical absolute CENTERED_FAMILY_OVERRIDES
+#   band (see the note at the end of this registry).
+CENTERED_V0_BASE_XY = (0.0, -0.45)  # active Piper base, world frame
+# (mirrors assets/embodiments/piper/config.yml robot_pose [[0,-0.45,0.75,...]]
+#  and the centred-batch comments in left_task_base.py)
+
+# Base-1 drafts (2026-09-30).  Previous table-centre-symmetric round results
+# are kept in the per-task comments for comparison; all previous evidence is
+# archived under results/pilot/v0_ranges/*.d*.jsonl.
+CENTERED_V0_OVERRIDES: dict[str, dict[str, XYYawRange]] = {
+    "blocks_ranking_rgb": {
+        # Target line is derived from block1's spec workspace (span <=0.32 m
+        # at <=15 deg).  Table-centre round final: x±0.25/y±0.20 @ SR 0.22.
+        "block1": XYYawRange(x=(-0.32, 0.32), y=(0.15, 0.50), yaw_rad=(0.0, 0.75)),
+        "block2": XYYawRange(x=(-0.32, 0.32), y=(0.15, 0.50), yaw_rad=(0.0, 0.75)),
+        "block3": XYYawRange(x=(-0.32, 0.32), y=(0.15, 0.50), yaw_rad=(0.0, 0.75)),
+    },
+    "blocks_ranking_size": {
+        # Table-centre round final: x±0.25/y±0.20 @ SR 0.21 (rgb twin 0.22).
+        "block1": XYYawRange(x=(-0.30, 0.30), y=(0.16, 0.48), yaw_rad=(0.0, 0.75)),
+        "block2": XYYawRange(x=(-0.30, 0.30), y=(0.16, 0.48), yaw_rad=(0.0, 0.75)),
+        "block3": XYYawRange(x=(-0.30, 0.30), y=(0.16, 0.48), yaw_rad=(0.0, 0.75)),
+    },
+    "place_bread_basket": {
+        # Basket and breads share one overlapping band (union randomization);
+        # the 0.13 m clearance is footprint-aware and unchanged.
+        # Table-centre round final: x±0.22/y±0.20 @ SR 0.20 (failures were
+        # reach-dominated at actor-base distance >=0.55).
+        "breadbasket": XYYawRange(x=(-0.30, 0.30), y=(0.22, 0.48), yaw_rad=(0.0, 0.50)),
+        "bread0": XYYawRange(x=(-0.30, 0.30), y=(0.22, 0.48), yaw_rad=(0.0, 0.50)),
+        "bread1": XYYawRange(x=(-0.30, 0.30), y=(0.22, 0.48), yaw_rad=(0.0, 0.50)),
+    },
+    "place_bread_skillet": {
+        # Table-centre round final: x±0.25/y±0.18 @ SR 0.41 (best case:
+        # widened with no rate cost).
+        "bread": XYYawRange(x=(-0.32, 0.32), y=(0.26, 0.50), yaw_rad=(0.0, 0.50)),
+        "skillet": XYYawRange(x=(-0.32, 0.32), y=(0.26, 0.50), yaw_rad=(0.0, 0.50)),
+    },
+    "place_burger_fries": {
+        # Structural-ceiling family (table-centre round: 0.11->0.15->0.17->
+        # 0.21 at progressively narrower bands; 09-11 collection baseline
+        # 0.173).  Occlusion when both foods share the band is accepted per
+        # v3; base-1 keeps a conservative box.
+        "tray": XYYawRange(x=(-0.22, 0.22), y=(0.22, 0.40), yaw_rad=(0.0, 0.00)),
+        "hamburg": XYYawRange(x=(-0.22, 0.22), y=(0.22, 0.40), yaw_rad=(0.0, 0.20)),
+        "frenchfries": XYYawRange(x=(-0.22, 0.22), y=(0.22, 0.40), yaw_rad=(0.0, 0.20)),
+    },
+    "place_can_basket": {
+        # Directionally risky family (transport distance vs near-ceiling
+        # release).  Table-centre round final: x±0.22/y±0.15 @ SR 0.22.
+        "basket": XYYawRange(x=(-0.22, 0.22), y=(0.24, 0.42), yaw_rad=(0.0, 0.00)),
+        "can": XYYawRange(x=(-0.22, 0.22), y=(0.24, 0.42), yaw_rad=(0.0, 0.00)),
+    },
+    "place_cans_plasticbox": {
+        # Box keeps its yaw freedom via the impl's _sample_box_pose.
+        # Table-centre round: SR 0.09->0.13->0.19 with the success window
+        # measured at box-base distance 0.35-0.5 m (near <0.35 arm
+        # collision, far >=0.5 unreachable; historical asymmetric near-arm
+        # band piloted 0.47).  Base-1 places the box directly in that
+        # window; cans sweep a wider forward band.
+        "plasticbox": XYYawRange(x=(-0.12, 0.12), y=(0.22, 0.38), yaw_rad=(-0.60, 0.60)),
+        "can1": XYYawRange(x=(-0.18, 0.18), y=(0.15, 0.45), yaw_rad=(0.0, 0.00)),
+        "can2": XYYawRange(x=(-0.18, 0.18), y=(0.15, 0.45), yaw_rad=(0.0, 0.00)),
+    },
+    "place_dual_shoes": {
+        # Shoes keep impl-hardcoded lift rows (exception above); the box y
+        # declared here equals the impl's centered-batch hardcode
+        # (abs -0.15,-0.02 = base-relative 0.30,0.43) and is overwritten by
+        # the impl anyway; only the box x band applies.
+        # Table-centre round final: box x±0.20 @ SR 0.24 (x±0.25 gave 0.17,
+        # UnStableError-bound).
+        "shoe_box": XYYawRange(x=(-0.22, 0.22), y=(0.30, 0.43), yaw_rad=(0.0, 0.00)),
+    },
+    "stack_blocks_two": {
+        # Table-centre round final: x±0.30/y±0.22 @ SR 0.35 (plateau across
+        # four widening steps 0.35-0.42).  Base-1 pulls the band toward the
+        # near-arm strip where the legacy control piloted 0.52.
+        "block1": XYYawRange(x=(-0.40, 0.40), y=(0.15, 0.50), yaw_rad=(0.0, 0.60)),
+        "block2": XYYawRange(x=(-0.40, 0.40), y=(0.15, 0.50), yaw_rad=(0.0, 0.60)),
+    },
+    # "stack_bowls_two": NO v0 entry — documented physical exception
+    # (2026-09-30).  The measured place-IK reach bound (target world x>0.12
+    # or y>0.05 unreachable; 2026-08-23 200-seed pilot) and the impl's
+    # three-point 0.13 m clearance geometry leave no workable base-relative
+    # band either: the reachable forward strip (y_rel ~0.30-0.50, world
+    # -0.15..+0.05) is narrower than the ~0.113 m-minimum layout geometry in
+    # y when combined with the x bound (table-centre draft-2 x±0.15/y±0.08
+    # piloted 0.10).  The family keeps its historical absolute
+    # CENTERED_FAMILY_OVERRIDES band (x(-0.20,0.05), y(-0.15,0.00)) in both
+    # protocols; evidence archived under
+    # results/pilot/v0_ranges/stack_bowls_two_left_cen_arm_top_cam.d*.jsonl.
+}
+
+# Optional ellipse (disc) sampling per actor, A/B against the rectangular
+# bands above (user suggestion 2026-09-30: define the range as the
+# reach-disc ∩ tabletop region directly).  Values are BASE-RELATIVE:
+# (rx, ry, y_center_rel) — x radius, y radius, ellipse centre distance in
+# front of the base.  Every ellipse is inscribed so that no sampled point
+# falls off-table (footprint-aware lower bound) or beyond the reliable
+# reach radius (worst-point base distance <= ~0.51 m), unlike the
+# rectangle's far corners.  sample_spec_pose draws area-uniformly inside.
+# Ellipse A/B verdict (2026-10-01, all 100-seed pilots archived under
+# results/pilot/v0_ranges/*.ellipse.pilot.jsonl): the ellipse wins for
+# place_bread_basket (0.58 vs rect 0.47), place_cans_plasticbox (0.39 vs
+# 0.29) and place_can_basket (0.27 vs 0.23); the rectangle stays for
+# stack_blocks_two (tie at the base-2 box, and the rectangle can be pushed
+# wider: 0.78 at x±0.40), place_burger_fries (0.39 vs 0.29) and
+# place_dual_shoes (0.29 vs 0.20 — the ellipse's centre-concentrated x
+# margin puts the box closer to the shoe rows and raises UnStableError).
+# For the remaining tasks no ellipse was configured (rectangle final).
+CENTERED_V0_FINAL_ELLIPSE_TASKS = frozenset({
+    "place_bread_basket",
+    "place_cans_plasticbox",
+    "place_can_basket",
+})
+# Optional override for future A/B pilots: ROBOTWIN_V0_ELLIPSE=1 forces
+# ellipses on every configured task, =0 disables them; unset uses the final
+# per-task verdict above.
+_ELLIPSE_OVERRIDE = os.environ.get("ROBOTWIN_V0_ELLIPSE")
+
+CENTERED_V0_ELLIPSES: dict[str, dict[str, tuple[float, float, float]]] = {
+    "stack_blocks_two": {
+        # Bounding box matches the base-2 rectangle (x±0.35, y_rel 0.15-0.50);
+        # worst-point base distance 0.51 m vs the rectangle's 0.61 m corners.
+        "block1": (0.35, 0.175, 0.325),
+        "block2": (0.35, 0.175, 0.325),
+    },
+    "place_bread_basket": {
+        # Bounding box matches the base-2 rectangle (x±0.30, y_rel 0.22-0.48);
+        # worst-point base distance 0.49 m vs the rectangle's 0.57 m corners.
+        # A/B pilot 2026-09-30: ellipse 0.58 vs rectangle 0.47 — ellipse wins.
+        "breadbasket": (0.30, 0.13, 0.35),
+        "bread0": (0.30, 0.13, 0.35),
+        "bread1": (0.30, 0.13, 0.35),
+    },
+    "place_can_basket": {
+        # Rescue-round ellipse for the borderline family (rectangle piloted
+        # 0.23); worst-point base distance ~0.44 m vs rectangle corner 0.47.
+        "basket": (0.22, 0.09, 0.33),
+        "can": (0.22, 0.09, 0.33),
+    },
+    "place_burger_fries": {
+        # Rescue-round ellipse (rectangle piloted 0.39); worst-point ~0.45 m.
+        "tray": (0.22, 0.09, 0.31),
+        "hamburg": (0.22, 0.09, 0.31),
+        "frenchfries": (0.22, 0.09, 0.31),
+    },
+    "place_cans_plasticbox": {
+        # Rescue-round ellipses (rectangle piloted 0.29); box kept in its
+        # measured 0.35-0.5 m distance window, cans sweep wider.
+        "plasticbox": (0.12, 0.08, 0.30),
+        "can1": (0.18, 0.15, 0.30),
+        "can2": (0.18, 0.15, 0.30),
+    },
+    "place_dual_shoes": {
+        # shoe_box only; the impl overwrites y with its hardcoded band, so
+        # the ellipse effectively shapes the x distribution (rectangle
+        # piloted 0.29).
+        "shoe_box": (0.22, 0.065, 0.365),
+    },
+}
+
+# Active centred-batch randomization protocol.  "v0" selects
+# CENTERED_V0_OVERRIDES (base-relative, footprint-aware, per-task rectangle
+# or ellipse), "legacy" keeps the historical shared envelope / family
+# overrides.  Default is "v0" since 2026-10-01 (TrEv evaluation completed
+# 2026-10-01; flip recorded in docs/_exp.md history).  Set
+# ROBOTWIN_CENTERED_PROTOCOL=legacy to reproduce legacy-layout runs.
+# Task-implementation revision.  The env switch below is a spatial preset
+# name inherited from the V0 range pilots; it is not the experiment version.
+TASK_IMPLEMENTATION_VERSION = "v1"
+CENTERED_ACTIVE_PROTOCOL = os.environ.get("ROBOTWIN_CENTERED_PROTOCOL", "v0")
 
 
 def _register(manifest: TaskManifest) -> None:
@@ -354,45 +563,53 @@ def get_manifest(semantic_task: str) -> TaskManifest:
 
 
 def centered_wide_workspace_manifest(manifest: TaskManifest) -> TaskManifest:
-    """Return the new-batch manifest with one common actor spawn envelope.
+    """Return the new-batch manifest with the active protocol's spawn envelopes.
 
-    The deprecated hanging-mug family is deliberately never transformed or
-    collected. Per-actor orientation, collision footprint and static/dynamic
-    identity remain the same; only the initial randomization envelope is shared.
+    Resolution order per actor: CENTERED_V0_OVERRIDES (only when
+    CENTERED_ACTIVE_PROTOCOL == "v0"; entries are BASE-RELATIVE, see the
+    registry header, and are translated to world coordinates here), then
+    the historical CENTERED_FAMILY_OVERRIDES (absolute), then the
+    historical CENTERED_WIDE_WORKSPACE (absolute). The deprecated
+    hanging-mug family is deliberately never transformed or collected.
+    Per-actor orientation, collision footprint and static/dynamic identity
+    remain the same; only the initial randomization envelope changes.
     """
     if manifest.semantic_task == "hanging_mug":
         raise ValueError("deprecated hanging_mug cannot use the centred-wide batch")
+    base_x, base_y = CENTERED_V0_BASE_XY
+    v0_override = (
+        CENTERED_V0_OVERRIDES.get(manifest.semantic_task, {})
+        if CENTERED_ACTIVE_PROTOCOL == "v0"
+        else {}
+    )
     override = CENTERED_FAMILY_OVERRIDES.get(manifest.semantic_task, {})
-    specs = {
-        name: replace(
-            spec,
-            workspace=override.get(name, CENTERED_WIDE_WORKSPACE),
-        )
-        for name, spec in manifest.actor_specs.items()
-    }
-    return replace(manifest, actor_specs=specs)
 
+    def _resolve(name: str, spec: ActorSamplingSpec):
+        rel = v0_override.get(name)
+        if rel is not None:
+            workspace = XYYawRange(
+                x=(base_x + rel.x[0], base_x + rel.x[1]),
+                y=(base_y + rel.y[0], base_y + rel.y[1]),
+                yaw_rad=rel.yaw_rad,
+            )
+            ellipse = None
+            use_ellipse = (
+                manifest.semantic_task in CENTERED_V0_FINAL_ELLIPSE_TASKS
+                if _ELLIPSE_OVERRIDE is None
+                else _ELLIPSE_OVERRIDE == "1"
+            )
+            if use_ellipse:
+                ell = CENTERED_V0_ELLIPSES.get(manifest.semantic_task, {}).get(name)
+                if ell is not None:
+                    rx, ry, yc_rel = (float(v) for v in ell)
+                    ellipse = (base_x, base_y + yc_rel, rx, ry)
+            return replace(spec, workspace=workspace, ellipse=ellipse)
+        workspace = override.get(name, CENTERED_WIDE_WORKSPACE)
+        return replace(spec, workspace=workspace)
 
-def _canonical_dict(manifest: TaskManifest) -> dict:
-    payload = asdict(manifest)
-    # Keep actor spec ordering deterministic.
-    return {"actor_specs": [payload["actor_specs"][name] for name in sorted(payload["actor_specs"])],
-            "semantic_task": payload["semantic_task"],
-            "route_bin_count": payload["route_bin_count"],
-            "pilot_seed_count": payload["pilot_seed_count"],
-            "min_success_rate": payload["min_success_rate"],
-            "min_crossing_pair_rate": payload["min_crossing_pair_rate"]}
-
-
-def manifest_hash(manifest: TaskManifest) -> str:
-    """Return a stable hex hash of one manifest.
-
-    @input: any ``TaskManifest``.
-    @output: 16-hex-character digest of the canonical serialization.
-    @scenario: Prove that both camera variants share identical geometry.
-    """
-    canonical = json.dumps(_canonical_dict(manifest), sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+    return replace(manifest, actor_specs={
+        name: _resolve(name, spec) for name, spec in manifest.actor_specs.items()
+    })
 
 
 def all_manifests() -> Mapping[str, TaskManifest]:

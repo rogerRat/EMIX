@@ -19,6 +19,7 @@ class EmixDiffusionConfig(DiffusionConfig):
     mixup_loss_weight: float = 1.0
     mixup_visual_keys: list[str] | None = None
     mixup_state_mode: str = "anchor"
+    mixup_method: str = "overlay"
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -35,6 +36,8 @@ class EmixDiffusionConfig(DiffusionConfig):
             raise ValueError(f"mixup_loss_weight must be positive, got {self.mixup_loss_weight}")
         if self.mixup_state_mode != "anchor":
             raise ValueError(f"Only mixup_state_mode='anchor' is supported, got {self.mixup_state_mode}")
+        if self.mixup_method not in ("overlay", "collage"):
+            raise ValueError(f"mixup_method must be overlay or collage, got {self.mixup_method}")
 
     def validate_features(self) -> None:
         if self.robot_state_feature is None:

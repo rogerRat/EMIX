@@ -48,7 +48,6 @@ try:
         CENTERED_WIDE_WORKSPACE,
         all_manifests,
         centered_wide_workspace_manifest,
-        manifest_hash,
     )
     from envs.utils import Action, ArmTag  # noqa: E402
 finally:
@@ -343,16 +342,39 @@ class TestCameraConfiguration(unittest.TestCase):
 
 class TestCenteredWorkspaceContract(unittest.TestCase):
     def test_all_active_families_share_calibrated_workspace(self):
+        import envs.left.left_task_manifests as manifests
         from envs.left.left_task_manifests import CENTERED_FAMILY_OVERRIDES
-        for semantic_task, manifest in all_manifests().items():
-            if semantic_task == "hanging_mug":
-                continue
-            calibrated = centered_wide_workspace_manifest(manifest)
-            self.assertTrue(calibrated.actor_specs)
-            override = CENTERED_FAMILY_OVERRIDES.get(semantic_task, {})
-            for name, spec in calibrated.actor_specs.items():
-                expected = override.get(name, CENTERED_WIDE_WORKSPACE)
-                self.assertEqual(spec.workspace, expected)
+        previous = manifests.CENTERED_ACTIVE_PROTOCOL
+        manifests.CENTERED_ACTIVE_PROTOCOL = "legacy"
+        try:
+            for semantic_task, manifest in all_manifests().items():
+                if semantic_task == "hanging_mug":
+                    continue
+                calibrated = centered_wide_workspace_manifest(manifest)
+                self.assertTrue(calibrated.actor_specs)
+                override = CENTERED_FAMILY_OVERRIDES.get(semantic_task, {})
+                for name, spec in calibrated.actor_specs.items():
+                    expected = override.get(name, CENTERED_WIDE_WORKSPACE)
+                    self.assertEqual(spec.workspace, expected)
+        finally:
+            manifests.CENTERED_ACTIVE_PROTOCOL = previous
+
+    def test_v0_protocol_resolves_registry(self):
+        import envs.left.left_task_manifests as manifests
+        previous = manifests.CENTERED_ACTIVE_PROTOCOL
+        manifests.CENTERED_ACTIVE_PROTOCOL = "v0"
+        try:
+            stack = centered_wide_workspace_manifest(all_manifests()["stack_blocks_two"])
+            ws = stack.actor_specs["block1"].workspace
+            self.assertEqual(ws.x, (-0.40, 0.40))
+            self.assertAlmostEqual(ws.y[0], -0.30, places=6)
+            # exception family keeps the historical family override band
+            bowls = centered_wide_workspace_manifest(all_manifests()["stack_bowls_two"])
+            self.assertEqual(
+                bowls.actor_specs["bowl1"].workspace.x, (-0.20, 0.05)
+            )
+        finally:
+            manifests.CENTERED_ACTIVE_PROTOCOL = previous
 
 
 class TestCameraSpecs(unittest.TestCase):
@@ -457,32 +479,153 @@ class TestCenteredStaticPoseSampling(unittest.TestCase):
 
 
 class TestManifestPairing(unittest.TestCase):
-    def test_each_pair_shares_one_manifest_hash(self):
+    def test_manifests_have_required_fields(self):
         manifests = all_manifests()
         self.assertEqual(len(manifests), 11)
         for semantic_task, manifest in manifests.items():
             self.assertEqual(manifest.semantic_task, semantic_task)
-            self.assertIsInstance(manifest_hash(manifest), str)
-            self.assertEqual(len(manifest_hash(manifest)), 16)
+            self.assertGreaterEqual(manifest.pilot_seed_count, 1)
+            self.assertGreater(manifest.min_success_rate, 0.0)
+            for name, spec in manifest.actor_specs.items():
+                self.assertTrue(spec.workspace.x[0] <= spec.workspace.x[1], f"{semantic_task}/{name} x range")
+                self.assertTrue(spec.workspace.y[0] <= spec.workspace.y[1], f"{semantic_task}/{name} y range")
+                self.assertGreaterEqual(spec.minimum_clearance_m, 0.0)
 
-    def test_pair_hashes_are_stable_and_documented(self):
-        # Expected hashes are frozen in each impl docstring Pilot evidence.
+    def test_manifest_fields_are_stable_and_documented(self):
+        # Field-level protocol validation (replaces the former manifest-hash
+        # freeze per user decision 2026-09-30): each family's exact spawn
+        # envelope, clearance, static flag and base quat are asserted
+        # actor by actor.  Pilot evidence lives in the impl docstrings and
+        # results/pilot/.  Update this table only together with a version
+        # increase and a pilot result.
+        # actor -> [x, y, yaw_rad, clearance_m, static, base_quat]
         expected = {
-            "blocks_ranking_rgb": "3b292b9e1d535999",
-            "blocks_ranking_size": "ed8fb45f24857693",
-            "hanging_mug": "28ee798eb3dfcde4",
-            "place_bread_basket": "6d79f86cb766c76c",
-            "place_bread_skillet": "e0f8b156b7b9c742",
-            "place_burger_fries": "176bcde62f9cb29c",
-            "place_can_basket": "ec2e2b5aa098c862",
-            "place_cans_plasticbox": "d13fd6141c9178fe",
-            "place_dual_shoes": "ce583ff0cacdbd38",
-            "stack_blocks_two": "2585a2c9d73c5073",
-            "stack_bowls_two": "ace5714486a162e4",
+            "blocks_ranking_rgb": {
+                "block1": [[-0.45, -0.16], [-0.18, 0.08], [0.0, 0.75], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+                "block2": [[-0.45, -0.16], [-0.18, 0.08], [0.0, 0.75], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+                "block3": [[-0.45, -0.16], [-0.18, 0.08], [0.0, 0.75], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+            },
+            "blocks_ranking_size": {
+                "block1": [[-0.45, -0.16], [-0.18, 0.08], [0.0, 0.75], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+                "block2": [[-0.45, -0.16], [-0.18, 0.08], [0.0, 0.75], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+                "block3": [[-0.45, -0.16], [-0.18, 0.08], [0.0, 0.75], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+            },
+            "hanging_mug": {
+                "mug": [[-0.44, -0.40], [-0.01, 0.01], [0.0, 0.0], 0.1, False, [0.707, 0.707, 0.0, 0.0]],
+                "rack": [[-0.29, -0.29], [-0.02, -0.02], [0.0, 0.0], 0.1, True, [-0.11906, -0.28744, 0.3626, 0.8754]],
+            },
+            "place_bread_basket": {
+                "bread0": [[-0.44, -0.34], [-0.18, 0.04], [0.0, 0.5], 0.1, False, [0.707, 0.707, 0.0, 0.0]],
+                "bread1": [[-0.44, -0.34], [-0.18, 0.04], [0.0, 0.5], 0.1, False, [0.707, 0.707, 0.0, 0.0]],
+                "breadbasket": [[-0.44, -0.12], [-0.28, 0.04], [0.0, 0.5], 0.13, True, [0.5, 0.5, 0.5, 0.5]],
+            },
+            "place_bread_skillet": {
+                "bread": [[-0.44, -0.34], [-0.18, 0.04], [0.0, 0.5], 0.1, False, [0.707, 0.707, 0.0, 0.0]],
+                "skillet": [[-0.44, -0.12], [-0.24, 0.14], [0.0, 0.5], 0.17, True, [0.0, 0.0, 0.707, 0.707]],
+            },
+            "place_burger_fries": {
+                "frenchfries": [[-0.46, -0.34], [-0.35, -0.27], [0.0, 0.2], 0.08, False, [1.0, 0.0, 0.0, 0.0]],
+                "hamburg": [[-0.46, -0.34], [-0.35, -0.27], [0.0, 0.2], 0.08, False, [0.5, 0.5, 0.5, 0.5]],
+                "tray": [[-0.44, -0.08], [-0.16, -0.04], [0.0, 0.0], 0.08, True, [0.706527, 0.706483, -0.0291356, -0.0291767]],
+            },
+            "place_can_basket": {
+                "basket": [[-0.38, -0.12], [-0.30, 0.0], [0.0, 0.0], 0.15, True, [0.5, 0.5, 0.5, 0.5]],
+                "can": [[-0.25, -0.20], [0.0, 0.08], [0.0, 0.0], 0.15, False, [1.0, 0.0, 0.0, 0.0]],
+            },
+            "place_cans_plasticbox": {
+                "can1": [[-0.42, -0.36], [-0.15, -0.07], [0.0, 0.0], 0.08, False, [0.5, 0.5, 0.5, 0.5]],
+                "can2": [[-0.16, -0.10], [-0.15, -0.07], [0.0, 0.0], 0.08, False, [0.5, 0.5, 0.5, 0.5]],
+                "plasticbox": [[-0.37, -0.15], [-0.28, -0.23], [0.0, 0.0], 0.13, True, [0.5, 0.5, 0.5, 0.5]],
+            },
+            "place_dual_shoes": {
+                "left_shoe": [[-0.46, -0.14], [0.13, 0.14], [0.0, 0.5], 0.1, False, [0.707, 0.707, 0.0, 0.0]],
+                "right_shoe": [[-0.46, -0.14], [0.13, 0.14], [0.0, 0.5], 0.1, False, [0.707, 0.707, 0.0, 0.0]],
+                "shoe_box": [[-0.46, -0.14], [-0.18, -0.02], [0.0, 0.0], 0.13, True, [0.707, 0.707, 0.0, 0.0]],
+            },
+            "stack_blocks_two": {
+                "block1": [[-0.45, -0.10], [-0.08, 0.05], [0.0, 0.6], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+                "block2": [[-0.45, -0.10], [-0.08, 0.05], [0.0, 0.6], 0.1, False, [1.0, 0.0, 0.0, 0.0]],
+            },
+            "stack_bowls_two": {
+                "bowl1": [[-0.50, -0.05], [-0.15, 0.15], [0.0, 0.0], 0.13, False, [0.5, 0.5, 0.5, 0.5]],
+                "bowl2": [[-0.50, -0.05], [-0.15, 0.15], [0.0, 0.0], 0.13, False, [0.5, 0.5, 0.5, 0.5]],
+            },
         }
         manifests = all_manifests()
-        for semantic_task, expected_hash in expected.items():
-            self.assertEqual(manifest_hash(manifests[semantic_task]), expected_hash)
+        self.assertEqual(sorted(manifests), sorted(expected))
+        for semantic_task, actors in expected.items():
+            manifest = manifests[semantic_task]
+            self.assertEqual(sorted(manifest.actor_specs), sorted(actors), semantic_task)
+            for name, fields in actors.items():
+                spec = manifest.actor_specs[name]
+                x, y, yaw, clearance, static, quat = fields
+                self.assertEqual(list(spec.workspace.x), x, f"{semantic_task}/{name} x")
+                self.assertEqual(list(spec.workspace.y), y, f"{semantic_task}/{name} y")
+                self.assertEqual(list(spec.workspace.yaw_rad), yaw, f"{semantic_task}/{name} yaw")
+                self.assertAlmostEqual(spec.minimum_clearance_m, clearance, places=6, msg=f"{semantic_task}/{name} clearance")
+                self.assertEqual(spec.static, static, f"{semantic_task}/{name} static")
+                self.assertEqual(list(spec.base_quat), quat, f"{semantic_task}/{name} quat")
+
+
+class TestEllipseSampling(unittest.TestCase):
+    def test_v0_ellipse_attached_and_positions_inside(self):
+        import envs.left.left_task_manifests as manifests
+        from envs.left.left_task_manifests import (
+            CENTERED_V0_ELLIPSES,
+            centered_wide_workspace_manifest,
+            get_manifest,
+        )
+        # The active protocol is read at import time; flip the module
+        # attribute directly (env var would need a reimport).
+        previous = manifests.CENTERED_ACTIVE_PROTOCOL
+        manifests.CENTERED_ACTIVE_PROTOCOL = "v0"
+        previous_override = manifests._ELLIPSE_OVERRIDE
+        manifests._ELLIPSE_OVERRIDE = "1"
+        try:
+            for task, actors in CENTERED_V0_ELLIPSES.items():
+                manifest = centered_wide_workspace_manifest(get_manifest(task))
+                for name, (rx, ry, yc_rel) in actors.items():
+                    spec = manifest.actor_specs[name]
+                    self.assertIsNotNone(spec.ellipse, f"{task}/{name} ellipse missing")
+                    cx, cy, erx, ery = spec.ellipse
+                    self.assertAlmostEqual(erx, rx, places=6)
+                    self.assertAlmostEqual(ery, ry, places=6)
+                    self.assertAlmostEqual(cy, -0.45 + yc_rel, places=6)
+                    # bounding box consistency: ellipse fits inside the
+                    # resolved rectangular workspace
+                    self.assertLessEqual(cx + erx, spec.workspace.x[1] + 1e-9)
+                    self.assertGreaterEqual(cx - erx, spec.workspace.x[0] - 1e-9)
+                    self.assertLessEqual(cy + ery, spec.workspace.y[1] + 1e-9)
+                    self.assertGreaterEqual(cy - ery, spec.workspace.y[0] - 1e-9)
+        finally:
+            manifests.CENTERED_ACTIVE_PROTOCOL = previous
+            manifests._ELLIPSE_OVERRIDE = previous_override
+
+    def test_ellipse_sampling_stays_inside(self):
+        import numpy as np
+        from envs.left.left_task_base import ActorSamplingSpec, XYYawRange
+
+        class _Task:
+            camera_variant = "cen_arm_top_cam"
+
+            sample_spec_pose = None  # bound below
+
+        task = _Task()
+        task.sample_spec_pose = LeftTaskBase.sample_spec_pose.__get__(task)
+        spec = ActorSamplingSpec(
+            name="probe",
+            workspace=XYYawRange(x=(-0.35, 0.35), y=(-0.30, 0.05), yaw_rad=(0.0, 0.50)),
+            minimum_clearance_m=0.1,
+            static=False,
+            ellipse=(0.0, -0.125, 0.35, 0.175),
+        )
+        cx, cy, rx, ry = spec.ellipse
+        np.random.seed(7)
+        for _ in range(200):
+            pose = task.sample_spec_pose(spec)
+            nx = (pose.p[0] - cx) / rx
+            ny = (pose.p[1] - cy) / ry
+            self.assertLessEqual(nx * nx + ny * ny, 1.0 + 1e-9)
 
 
 class TestRightArmTolerance(unittest.TestCase):

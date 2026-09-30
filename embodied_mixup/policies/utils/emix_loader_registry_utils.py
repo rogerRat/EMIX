@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import random
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -20,9 +21,18 @@ import torch
 from ...candidates.emix_index import EMIX_INDEX_SCHEMA_VERSION, EmixIndex
 from ...candidates.emix_index_utils import load_emix_index, validate_source_dataset_fingerprint
 from ...datasets import require_lerobot_dataset_root
+from data_processing.instance_annotations import InstanceAnnotations
 from .batch import PolicyTemporalSpec
 
 logger = logging.getLogger(__name__)
+
+
+def paste_selected_object(anchor: torch.Tensor, donor: torch.Tensor,
+                          mask: torch.Tensor) -> torch.Tensor:
+    """Paste one donor object's visible pixels into an otherwise unchanged RGB."""
+    if anchor.shape != donor.shape or anchor.ndim != 3 or mask.shape != anchor.shape[-2:]:
+        raise ValueError("Collage requires equal [C,H,W] images and one [H,W] mask")
+    return torch.where(mask.unsqueeze(0), donor, anchor)
 
 
 @dataclass
@@ -35,6 +45,7 @@ class EmixLoaderSettings:
     mixup_beta: float = 1.6
     mixup_visual_keys: list[str] | None = None
     mixup_state_mode: str = "anchor"
+    mixup_method: str = "overlay"
     seed: int = 0
     include_task: bool = False
 
@@ -136,9 +147,13 @@ class EmixIndexReader:
         froms, tos = self._resolve_episode_bounds()
         # episode_end_map: frame_index -> exclusive end of its episode
         self._episode_end_map: dict[int, int] = {}
-        for ep_start, ep_end in zip(froms, tos):
+        self._episode_frame_map: dict[int, tuple[int, int]] = {}
+        for episode_index, (ep_start, ep_end) in enumerate(zip(froms, tos)):
             for fi in range(int(ep_start), int(ep_end)):
                 self._episode_end_map[fi] = int(ep_end)
+                self._episode_frame_map[fi] = (episode_index, fi - int(ep_start))
+        self.source_root = resolved_root
+        self.source_repo_id = source_repo_id
 
         self.policy_temporal_spec = policy_temporal_spec
         if self.policy_temporal_spec.n_obs_steps != 1:
@@ -334,7 +349,9 @@ class EmixIndexReader:
                 f"start={start} end={end}."
             )
 
-        return self._load_frame_range(start, end)
+        result = self._load_frame_range(start, end)
+        result["source_frame_index"] = start
+        return result
 
     def _load_frame_range(self, start: int, end: int) -> dict[str, Any]:
         """Load frames [start, end) from the source dataset.
@@ -351,6 +368,23 @@ class EmixIndexReader:
             values = [f[key] for f in frames]
             payload[key] = _stack_column(values)
         return {"feature_payload": payload}
+
+    @lru_cache(maxsize=32)
+    def _load_annotation_episode(self, episode_index: int, camera: str) -> InstanceAnnotations:
+        path = self.source_root / "annotations" / camera / f"episode{episode_index}.hdf5"
+        if not path.is_file():
+            raise FileNotFoundError(f"Emix-collage requires paired annotation: {path}")
+        annotation = InstanceAnnotations.load(path)
+        if annotation.dataset_id != self.source_repo_id or annotation.episode_id != f"episode{episode_index}" or annotation.camera != camera:
+            raise ValueError(f"Annotation stream fields do not match dataset frame: {path}")
+        return annotation
+
+    def annotation_frame(self, source_frame_index: int, camera: str) -> tuple[np.ndarray, tuple[str, ...]]:
+        episode_index, frame_index = self._episode_frame_map[source_frame_index]
+        annotation = self._load_annotation_episode(episode_index, camera)
+        if frame_index >= len(annotation.labels) or int(annotation.frame_ids[frame_index]) != frame_index:
+            raise ValueError(f"Annotation frame alignment failed for episode{episode_index} frame {frame_index}")
+        return annotation.labels[frame_index], annotation.objects
 
 
 class EmixPolicyDataset(torch.utils.data.Dataset):
@@ -390,6 +424,8 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
 
         self.policy_temporal_spec = policy_temporal_spec
         self.loader_cfg = loader_cfg
+        if loader_cfg.mixup_method not in ("overlay", "collage"):
+            raise ValueError("mixup_method must be overlay or collage")
         self._rng = random.Random(loader_cfg.seed)
 
         alpha_mode = loader_cfg.mixup_alpha_mode
@@ -469,6 +505,17 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             )
         action_pairs = self._resolve_action_indices(obs_len)
         alpha = self._sample_alpha()
+        collage_masks: dict[str, torch.Tensor] = {}
+        if self.loader_cfg.mixup_method == "collage":
+            for visual_key in (self.loader_cfg.mixup_visual_keys or ["observation.images.head_camera"]):
+                camera = visual_key.removeprefix("observation.images.")
+                labels, objects = self.reader.annotation_frame(window_1["source_frame_index"], camera)
+                candidates = [i for i, name in enumerate(objects)
+                              if name.startswith("task:") and np.any(labels == i)]
+                if not candidates:
+                    raise ValueError(f"No visible task object for Emix-collage in {record.sample_id}")
+                selected = candidates[self._rng.randrange(len(candidates))]
+                collage_masks[visual_key] = torch.from_numpy(labels == selected)
 
         obs_0 = [_frame_dict_from_window(window_0, i) for i in obs_pairs]
         obs_1 = [_frame_dict_from_window(window_1, i) for i in obs_pairs]
@@ -499,7 +546,11 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                 for item_0, item_1 in zip(obs_0, obs_1):
                     tensor_0 = item_0[key].to(dtype=torch.float32)
                     tensor_1 = item_1[key].to(dtype=torch.float32)
-                    mixed.append(alpha * tensor_0 + (1.0 - alpha) * tensor_1)
+                    if self.loader_cfg.mixup_method == "collage":
+                        mask = collage_masks[key]
+                        mixed.append(paste_selected_object(tensor_0, tensor_1, mask))
+                    else:
+                        mixed.append(alpha * tensor_0 + (1.0 - alpha) * tensor_1)
                 batch[key] = torch.stack(mixed, dim=0)
             elif key == state_key:
                 state_tensor = self._stack_items(obs_0, key)

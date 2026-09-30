@@ -1,0 +1,29 @@
+extends: run_v1_cen_arm_top_cam_500ep.yaml
+project:
+  run_label: v1-collage-s5
+  runtime_config_root: configs/scripts/run/v1-collage/{task}
+  train_root: outputs/run_v1-collage/train/{task}
+  eval_root: outputs/run_v1-collage/eval/{task}
+  # All V1 conditions share exactly the same newly collected episodes/index.
+  collection_root: data/robotwin/v1/{task}
+  dataset_root: data/lerobot/v1/{task}
+  index_root: data/emix_index/v1/{task}
+pipeline:
+  policies: [baseline, emix]
+emix:
+  method: collage
+gpu_batches:
+  "0":
+    - blocks_ranking_rgb_left_cen_arm_top_cam
+    - place_bread_basket_left_cen_arm_top_cam
+    - stack_blocks_two_left_cen_arm_top_cam
+  "1":
+    - place_can_basket_left_cen_arm_top_cam
+    - place_dual_shoes_left_cen_arm_top_cam
+protocol:
+  experiment: v1-collage
+  id: v1-collage-s5
+  task_set: s5
+  selection_metric: historical-emix-minus-dp-percentage-points
+  emix_method: collage
+  emix_loss: loss1+loss2

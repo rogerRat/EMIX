@@ -227,6 +227,13 @@ class ActorSamplingSpec:
     minimum_clearance_m: float
     static: bool
     base_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    # Optional axis-aligned ellipse (cx, cy, rx, ry) in world coordinates.
+    # When set (v0 protocol only), sample_spec_pose draws positions uniformly
+    # inside the ellipse instead of the rectangular workspace; the rectangle
+    # is kept as the bounding box for documentation/validation.  Ellipses are
+    # inscribed in reach-disc ∩ tabletop so no sampled position wastes
+    # success rate off-table or off-reach (user decision 2026-09-30).
+    ellipse: tuple[float, float, float, float] | None = None
 
 
 @dataclass(frozen=True)
@@ -419,11 +426,28 @@ class LeftTaskBase(Base_Task):
         @input: an immutable actor sampling spec.
         @output: a ``sapien.Pose`` drawn from the spec workspace.
         @scenario: Reuse the manifest-defined ranges in every semantic sampler.
+        When ``spec.ellipse`` is set (v0 protocol), the position is drawn
+        uniformly inside the ellipse (area-uniform: r = sqrt(u)) and the
+        rectangular workspace only documents the bounding box.
         """
         w = spec.workspace
         lock_yaw_for_stable_static = (
             self.camera_variant in CENTERED_BATCH_VARIANTS and spec.static
         )
+        if spec.ellipse is not None:
+            cx, cy, rx, ry = (float(v) for v in spec.ellipse)
+            radius = float(np.sqrt(np.random.rand()))
+            theta = float(np.random.uniform(0.0, 2.0 * np.pi))
+            px = cx + rx * radius * np.cos(theta)
+            py = cy + ry * radius * np.sin(theta)
+            pose = rand_pose(
+                xlim=[px, px],
+                ylim=[py, py],
+                qpos=[float(v) for v in spec.base_quat],
+                rotate_rand=not lock_yaw_for_stable_static,
+                rotate_lim=[0.0, 0.0, float(w.yaw_rad[1])],
+            )
+            return pose
         return rand_pose(
             xlim=[float(w.x[0]), float(w.x[1])],
             ylim=[float(w.y[0]), float(w.y[1])],

@@ -89,12 +89,13 @@ emix:
     type: logarithmic
     start_batch_prob: 0.6
     end_batch_prob: 0.0
+# 2026-09-29 迁移：全部任务集中到 CUDA 1（RTX 5060），腾出 CUDA 0（RTX 4070）
+# 作为测试/开发卡。批内任务顺序执行（worker 逐任务处理），显存安全。
 gpu_batches:
-  '0':
+  '1':
   - stack_blocks_two_left_cen_arm_top_cam
   - place_bread_basket_left_cen_arm_top_cam
   - blocks_ranking_rgb_left_cen_arm_top_cam
-  '1':
   - place_can_basket_left_cen_arm_top_cam
   - place_dual_shoes_left_cen_arm_top_cam
 protocol:

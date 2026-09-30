@@ -1,0 +1,15 @@
+extends: run_v1_collage_s5.yaml
+project:
+  run_label: v1-overlay-s5
+  runtime_config_root: configs/scripts/run/v1-overlay/{task}
+  train_root: outputs/run_v1-overlay/train/{task}
+  eval_root: outputs/run_v1-overlay/eval/{task}
+pipeline:
+  policies: [emix]
+emix:
+  method: overlay
+protocol:
+  experiment: v1-overlay
+  id: v1-overlay-s5
+  emix_method: overlay
+  emix_loss: alpha*loss1+(1-alpha)*loss2

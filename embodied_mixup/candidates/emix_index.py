@@ -56,9 +56,14 @@ class EmixSourceMediaContract:
 class EmixSourceDatasetDeclaration:
     """Source dataset declaration embedded in EmixIndex.public.
 
-    @input: repo_id [str], root [str], hash [str|None], media [EmixSourceMediaContract].
+    @input: repo_id [str], root [str], hash [str|None] field-level identity
+        summary ("files=N;bytes=M"; legacy indexes hold a content hash),
+        media [EmixSourceMediaContract].
     @output: normalized source dataset declaration.
     @scenario: Record the source LeRobotDataset contract used for indexing.
+        The ``hash`` field name is kept for schema compatibility with
+        existing indexes; per user decision 2026-09-30 no content hashing is
+        used, the value is a field-level summary string.
     """
 
     repo_id: str

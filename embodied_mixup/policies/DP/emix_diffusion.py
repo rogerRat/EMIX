@@ -16,6 +16,21 @@ from ..utils.batch import (
 )
 
 
+def combine_emix_losses(loss_0: Tensor, loss_1: Tensor, valid_mask: Tensor,
+                        alpha: Tensor, method: str) -> Tensor:
+    """Average valid dimensions; collage keeps the full sum of both losses."""
+    if method == "collage":
+        mixed_loss = loss_0 + loss_1
+    elif method == "overlay":
+        alpha = alpha.to(dtype=loss_0.dtype).view(-1, 1, 1)
+        mixed_loss = alpha * loss_0 + (1.0 - alpha) * loss_1
+    else:
+        raise ValueError(f"Unknown EMIX method: {method}")
+    mask = valid_mask.unsqueeze(-1).to(dtype=loss_0.dtype)
+    denominator = mask.expand_as(mixed_loss).sum().clamp_min(1.0)
+    return (mixed_loss * mask).sum() / denominator
+
+
 class EmixDiffusionPolicy(DiffusionPolicy):
     """Diffusion policy with shared-condition dual-branch training loss."""
 
@@ -61,11 +76,8 @@ class EmixDiffusionPolicy(DiffusionPolicy):
         loss_0 = F.mse_loss(pred_0, target_0, reduction="none")
         loss_1 = F.mse_loss(pred_1, target_1, reduction="none")
 
-        valid_mask = (~batch["action_is_pad"]).unsqueeze(-1).to(dtype=loss_0.dtype)
-        alpha = batch["emix_alpha"].to(dtype=loss_0.dtype).view(-1, 1, 1)
-        mixed_loss = ((alpha * loss_0) + ((1.0 - alpha) * loss_1)) * valid_mask
-        denom = valid_mask.expand_as(mixed_loss).sum().clamp_min(1.0)
-        return mixed_loss.sum() / denom, {
+        return combine_emix_losses(loss_0, loss_1, ~batch["action_is_pad"],
+                                   batch["emix_alpha"], self.config.mixup_method), {
             "emix_loss_weight": float(self.config.mixup_loss_weight),
         }
 

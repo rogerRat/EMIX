@@ -86,3 +86,14 @@ ms_token.txt
 !/tests/test_image_noise.py
 
 !/tests/test_instance_annotations.py
+!/tests/test_emix_collage.py
+
+!/configs/scripts/run_v1_cen_arm_top_cam_500ep.yaml
+!/configs/scripts/run_v1_collage_s5.yaml
+!/configs/scripts/run_v1_collage_all10.yaml
+!/configs/scripts/run_v1_overlay_s5.yaml
+!/configs/scripts/run_v1_overlay_all10.yaml
+!/configs/scripts/run_v1_noise_s5_clean.yaml
+!/configs/scripts/run_v1_noise_s5_noisy.yaml
+!/configs/scripts/run_v1_noise_all10_clean.yaml
+!/configs/scripts/run_v1_noise_all10_noisy.yaml

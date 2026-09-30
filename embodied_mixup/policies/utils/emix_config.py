@@ -104,6 +104,11 @@ def apply_emix_schema(policy_cfg: Any, emix_payload: dict[str, Any]) -> None:
             "emix.mixup.state_mode must be 'anchor', "
             f"got {state_mode!r}"
         )
+    method = str(mixup_payload.get("method", policy_cfg.mixup_method))
+    if method not in ("overlay", "collage"):
+        raise ValueError(f"emix.mixup.method must be overlay or collage, got {method!r}")
+    if method == "collage" and getattr(policy_cfg, "type", None) != "emix_diffusion":
+        raise ValueError("Emix-collage currently requires emix_diffusion")
 
     # These fields are consumed later by both _build_emix_dataset() and the
     # EMIX policy forward() loss implementation.
@@ -113,3 +118,4 @@ def apply_emix_schema(policy_cfg: Any, emix_payload: dict[str, Any]) -> None:
     policy_cfg.mixup_loss_weight = loss_weight
     policy_cfg.mixup_visual_keys = visual_keys
     policy_cfg.mixup_state_mode = state_mode
+    policy_cfg.mixup_method = method

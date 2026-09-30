@@ -1,0 +1,10 @@
+extends: run_v1_noise_s5_clean.yaml
+project:
+  run_label: v1-noise-s5-train-noise-eval-noisy
+  runtime_config_root: configs/scripts/run/v1-noise-s5-noisy/{task}
+  eval_root: outputs/run_v1-noise/eval-noisy/{task}
+evaluation:
+  image_noise: {enabled: true, variance: 0.0025}
+protocol:
+  id: v1-noise-s5-train-noise-eval-noisy
+  evaluation_noise: gaussian

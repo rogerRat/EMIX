@@ -39,8 +39,10 @@ Pilot evidence: central-cam 30-seed pilot on version 0 0.57 (17/30 success),
 from __future__ import annotations
 
 import numpy as np
+import os
+from dataclasses import replace
 
-from ..left_task_base import LeftTaskBase, SceneInitRejectError
+from ..left_task_base import LeftTaskBase, SceneInitRejectError, XYYawRange
 from ..left_task_manifests import get_manifest
 from ...utils import *  # noqa: F401,F403
 
@@ -89,6 +91,18 @@ class StackBowlsTwoLeftImpl(LeftTaskBase):
         # band.  The sampled value is shared with load_actors through
         # ``self.stack_target_xy``.
         target_ws = specs["bowl1"].workspace
+        # V1 top camera: the pickup region is independent of the narrow,
+        # place-IK-reachable stack target. The 0.33 m half-width was accepted
+        # in 61/100 pilot seeds (expert plan and final success); its 0.198 m²
+        # bounding rectangle exceeds the native 0.18 m² bowl spawn rectangle.
+        # ROBOTWIN_V1_BOWLS_WIDE_SPAWN=0 explicitly restores the old shared band.
+        if (self.camera_variant == "cen_arm_top_cam"
+                and os.environ.get("ROBOTWIN_V1_BOWLS_WIDE_SPAWN", "1") == "1"):
+            half_x = float(os.environ.get("ROBOTWIN_V1_BOWLS_HALF_X", "0.33"))
+            if not 0.30 <= half_x <= 0.33:
+                raise ValueError("ROBOTWIN_V1_BOWLS_HALF_X must be within [0.30, 0.33]")
+            spawn_ws = XYYawRange(x=(-half_x, half_x), y=(-0.15, 0.15), yaw_rad=(0.0, 0.0))
+            specs = {name: replace(spec, workspace=spawn_ws) for name, spec in specs.items()}
         self.stack_target_xy = np.array([
             float(np.random.uniform(target_ws.x[0], target_ws.x[1])),
             float(np.random.uniform(target_ws.y[0], target_ws.y[1])),
