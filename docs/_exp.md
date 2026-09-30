@@ -19,7 +19,7 @@
 
 `v0` 出现在 `CENTERED_V0_OVERRIDES` 和 `ROBOTWIN_CENTERED_PROTOCOL` 中时，是**空间参数预设的历史名字**；它不能替代任务实现版本。当前代码用 `TASK_IMPLEMENTATION_VERSION=v1` 标识任务实现。今后的新实验命名以 `v1-...` 开头，配置中显式写入任务实现版本、空间参数预设、任务集与数据版本；V1 **必须重新采集十任务各 500 条轨迹**，不得复用 V0 数据。V0 的 YAML、JSON、日志等文本结果保持原名；旧 checkpoint 删除，旧二进制数据/视频逐目录保留约 10% 用于回查。
 
-V1 数据采集配置为 `configs/scripts/run_v1_cen_arm_top_cam_500ep.yaml`：十任务、顶视角、新数据与独立输出目录；其中 `task_implementation_version=v1`、`spatial_preset=v0` 显式分开，`collect_instance_ids=true` 同步记录原始 actor ID、物体名表，并在 84×84 转换时生成压缩归属图。首个正式 V1 实例启动前必须通过实测帧对齐检查。
+V1 数据采集配置为 `configs/scripts/run_v1_cen_arm_top_cam_500ep.yaml`：十任务、顶视角、新数据与独立输出目录；其中 `task_implementation_version=v1`、`spatial_preset=v0` 显式分开，`collect_instance_ids=true` 同步记录原始 actor ID、物体名表，并在 84×84 转换时生成压缩归属图。十任务各两帧的真实仿真采集冒烟已逐一验证 RGB/ID 帧数和任务对象名表；84×84 归属图转换另通过合成帧测试。
 
 新的 `pre_vis` 事前可视化要求适用于此后启动的训推；此前已经完成的 `v0-noise` 四臂不追溯标为符合新要求。
 
@@ -392,11 +392,11 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
-| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | 待启动 |
-| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | 待启动 |
-| 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 待启动 |
-| 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 待启动 |
-| 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 待启动 |
+| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**，两卡已开始采集 |
+| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | 已排队 |
+| 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
+| 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
+| 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 已排队 |
 
 `Emix-overlay` 保留旧图像线性叠加 `αI1+(1-α)I2` 与 `αloss1+(1-α)loss2`。`Emix-collage` 在第二图可见的 `task:` 对象中选一个，使用同帧的紧凑归属图把该对象像素粘入第一图，其余像素保持第一图；损失为 `loss1+loss2`，不乘 α、不除以 2。背景、机器人和墙不参与对象选择。首轮不加入阶段判断；阶段规则是 TODEV 条目 3 的后续独立变量。84×84 缩小时小物体和边缘归属的不可消除歧义保留为边界，不声称修复。
 
@@ -404,7 +404,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 
 `stack_bowls_two` 的 V1 顶视 bowl **初始位置**默认 x∈[-0.33,0.33]、y∈[-0.15,0.15]（标称矩形 0.198 m²，原生 0.18 m²）；**堆叠放置目标**仍受 place IK 限制，保留 x∈[-0.20,0.05]、y∈[-0.15,0]。两套范围独立。100-seed 试验（不同 seed 区间）分别为 ±0.30 m 起点成功 77/100、专家可采集 71/100；±0.33 m 起点成功 63/100、专家可采集 61/100；±0.33 m 的 200 个 bowl 起点中 185 个超出旧窄带。选择 ±0.33 m 是以更大范围换取较低可采集率；**标称矩形不能等同实际接受轨迹的均匀覆盖，更不能推断十任务所有放置目标都大于原生**。原始逐 seed 证据：`docs/evidence/v1_bowls/wide_spawn_100.pilot.jsonl` 与 `wide_spawn_x033_100.pilot.jsonl`。
 
-执行器 `scripts/run_v1_queue.py` 顺次启动十任务新采集和索引、拼贴五/十、overlay 对照五/十、噪声五/十；状态在 `outputs/v1_experiment_queue/status.json`，各实例 YAML 位于 `configs/scripts/run_v1_*.yaml`。运行中以实际 metrics 和状态文件更新本表，不把“待启动”写成已完成。
+执行器 `scripts/run_v1_queue.py` 顺次启动十任务新采集和索引、拼贴五/十、overlay 对照五/十、噪声五/十；当前监督进程 PID `2724642`，状态在 `outputs/v1_experiment_queue/status.json`，完整输出在同目录 `supervisor.log`，各实例 YAML 位于 `configs/scripts/run_v1_*.yaml`。运行中以实际 metrics 和状态文件更新本表，不把排队或运行中写成已完成。
 
 ---
 
