@@ -820,7 +820,9 @@ def run_prepare_task(
     # dataset (e.g. restored from an archive) must not trigger a re-collection
     # just because the raw hdf5 collections are not on disk.
     if not dataset_ready and not collection_ready:
-        stages.append(("collect", conda_command(config, "robotwin", gpu, "python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu, "--output-root", str(configured_path(config, "collection_root", task)))))
+        # The collector itself appends <task>/<task_config>; task_paths above
+        # expects one final <task> after the configured collection root.
+        stages.append(("collect", conda_command(config, "robotwin", gpu, "python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu, "--output-root", str(configured_path(config, "collection_root", task).parent))))
     if not dataset_ready:
         convert_command = conda_command(config, "preprocessing", gpu, "python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"]))
         if pipeline.get("collect_instance_ids", False):
