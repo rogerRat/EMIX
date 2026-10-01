@@ -392,7 +392,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
-| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**，两卡已开始采集 |
+| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**；首批 `blocks_ranking_rgb`、`blocks_ranking_size` 原始采集已完成，84×84 转换各约 160/500；GPU 当前处于 CPU 视频转码阶段 |
 | 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | 已排队 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
@@ -612,3 +612,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - 用户将当前大幅更新的任务实现定为 `v1`；`v0-singleTask-noise` 四臂结果全部归属于先前的 `v0` 实现与归档数据，不因后续代码默认摆放预设变化而重新命名。
 - `v1` 当前使用基座相对范围预设（代码标识 `v0`）；版本号与预设名分开维护。正式 V1 实验须建立独立实例、记录新数据版本，并遵守 §1.2.1 的 `pre_vis` 规则。
 - **bowls 修订**：此前 bowl 与堆叠目标共享 0.0375 m² 窄带，不足原生 0.18 m²。现把抓取起点与目标解耦，顶视默认起点标称 0.198 m²，目标仍为原窄带；100-seed 可采集率 61%，证据及边界见 §4。
+- **队列接管快照（08:03 CST）**：监督进程 PID 3136298 存活，正在转换首批两个任务，各约 160/500 episode；本阶段由 CPU 转码，双 GPU 暂无训练/推理负载。后续按小时巡检；状态 JSON 中旧 `exit_code`/`ended_at` 字段与当前 `running` 状态不一致，按存活 PID 和持续前进的监督日志判定当前运行状态。
