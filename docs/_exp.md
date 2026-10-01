@@ -393,7 +393,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
 | 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **完成**；十项 500ep 数据/标注、all10 索引与可视化完成 |
-| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **运行中**；`place_can_basket` defaultDP 评估、`stack_blocks_two` Emix-collage 训练 |
+| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **运行中**；`place_can_basket` Emix-collage 训练、`stack_blocks_two` Emix-collage 评估 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
 | 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 已排队 |
@@ -632,3 +632,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 ## 2026-10-02（V1 collage s5 继续运行）
 
 - **队列巡检（00:16 CST）**：V1 数据与 all10 索引阶段已完成；`collage_s5` 继续运行。`place_can_basket` defaultDP 评估仍在执行，`stack_blocks_two` 的 Emix-collage 训练约 2,956/30,000 steps；双卡利用率约 99%/100%。
+- **队列巡检（01:17 CST）**：`place_can_basket` Emix-collage 训练约 7,595/30,000 steps，`stack_blocks_two` Emix-collage 评估日志计数约 175/700；双卡利用率约 99%/100%。
