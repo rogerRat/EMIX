@@ -392,7 +392,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
-| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**；前八个任务已完成采集和转换；`place_cans_plasticbox` 正在采集（GPU 0 队列第 4/5 项），其后为 `stack_blocks_two` |
+| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**；九个任务已完成采集和转换；最后一项 `stack_blocks_two` 正在采集 |
 | 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | 已排队 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
@@ -622,3 +622,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检（15:07 CST）**：监督进程 PID 3136298 持续运行；前六个任务已完成转换，`place_dual_shoes` 原始采集完成、转换统计到 75/500，`place_cans_plasticbox` 仍在采集。转换使用 CPU，5060 暂空闲、4070 利用率约 45%；队列每卡串行，未抢跑下一任务以避免和监督 worker 争用其数据目录。
 - **队列巡检（16:09 CST）**：监督进程 PID 3136298 持续运行，前七个任务已完成转换；双卡分别采集 `stack_bowls_two`（5060，约 83%）和 `place_cans_plasticbox`（4070，约 73%），日志持续写入帧。
 - **队列巡检（17:09 CST）**：`stack_bowls_two` 转换完成，八个任务已完成并进入转换目录；`place_cans_plasticbox` 正在采集，日志 episode 约至 470，随后还需处理 `stack_blocks_two`。4070 当前利用率约 72%；5060 对应 worker 的 5/5 项已完成并等待全局屏障，保持队列分卡顺序以避免清理另一 worker 的进行中数据。
+- **队列巡检（18:10 CST）**：`place_cans_plasticbox` 转换完成，九个任务已进入转换目录；最后任务 `stack_blocks_two` 已开始采集并写到 episode 7。仅 4070 当前承担这项最后的串行任务，5060 worker 已完成五项并等待全局屏障；待十个数据集齐备后再启动索引。
