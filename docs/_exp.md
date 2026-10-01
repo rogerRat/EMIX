@@ -618,3 +618,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检（11:05 CST）**：监督进程 PID 3136298 和两路采集子进程持续运行；转换目录仍有前四个任务。日志显示 `place_can_basket` 已写出 episode 206 视频并继续采集，另一任务持续尝试并有成功 episode；GPU 利用率约 82%/55%。
 - **队列巡检（12:05 CST）**：监督进程 PID 3136298 持续运行，五个任务已进入转换目录；双卡当前分别采集 `place_dual_shoes`（5060，约 43%）和 `place_burger_fries`（4070，约 78%），episode 帧保存日志继续增长。
 - **队列巡检（13:06 CST）**：监督进程 PID 3136298 持续运行，六个任务已进入转换目录；双卡当前分别采集 `place_dual_shoes`（5060，约 72%）和 `place_cans_plasticbox`（4070，约 43%）。dual_shoes 多次出现 `041_shoe` 不稳定失败，但 episode 编号递增且仍有成功记录，采集继续。
+- **队列巡检（14:06 CST）**：监督进程 PID 3136298 与两路采集进程持续运行；转换目录仍有六个任务，活动任务为 `place_dual_shoes`、`place_cans_plasticbox`。双卡利用率约 82%/83%，日志持续写入帧。
