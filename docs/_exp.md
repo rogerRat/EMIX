@@ -633,3 +633,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 
 - **队列巡检（00:16 CST）**：V1 数据与 all10 索引阶段已完成；`collage_s5` 继续运行。`place_can_basket` defaultDP 评估仍在执行，`stack_blocks_two` 的 Emix-collage 训练约 2,956/30,000 steps；双卡利用率约 99%/100%。
 - **队列巡检（01:17 CST）**：`place_can_basket` Emix-collage 训练约 7,595/30,000 steps，`stack_blocks_two` Emix-collage 评估日志计数约 175/700；双卡利用率约 99%/100%。
+- **队列巡检（02:17 CST）**：`place_can_basket` Emix-collage 训练约 27,683/30,000 steps，`stack_blocks_two` Emix-collage 评估约 735/800；双卡利用率约 99%/100%，两项完整指标尚未落盘。
