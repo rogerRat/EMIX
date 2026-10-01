@@ -627,3 +627,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检（20:12 CST）**：all10 索引与可视化阶段于 11:37 完成，`collage_s5` 正在运行；两卡分别训练 `place_can_basket` 和 `stack_blocks_two` 的 defaultDP 基线，进度约 7,100/30,000 与 10,170/30,000 steps，GPU 利用率约 97%/99%。
 - **队列巡检（21:13 CST）**：`collage_s5` 继续运行；`place_can_basket` defaultDP 训练约 29,400/30,000 steps，`stack_blocks_two` defaultDP 评估约 447/800 steps。5060 利用率约 99%，4070 约 37%；训练/评估负载不同，监督日志正常推进。
 - **队列巡检（22:14 CST）**：`collage_s5` 继续运行，`place_can_basket` 与 `stack_blocks_two` 的 defaultDP 评估进程均在运行；GPU 利用率约 24%/54%，当前无需干预。
+- **队列巡检（23:15 CST）**：两项 defaultDP 评估进程仍运行，`stack_blocks_two` 日志推进到 615/800；GPU 利用率约 91%/100%，监督队列无异常。
