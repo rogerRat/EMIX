@@ -392,7 +392,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
-| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**；前六个任务已完成采集并进入转换目录；当前双卡分别采集 `place_dual_shoes`、`place_cans_plasticbox` |
+| 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **运行中**；前六个任务已完成采集和转换；`place_dual_shoes` 正在转换统计（75/500），`place_cans_plasticbox` 仍在采集 |
 | 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | 已排队 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
@@ -619,3 +619,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检（12:05 CST）**：监督进程 PID 3136298 持续运行，五个任务已进入转换目录；双卡当前分别采集 `place_dual_shoes`（5060，约 43%）和 `place_burger_fries`（4070，约 78%），episode 帧保存日志继续增长。
 - **队列巡检（13:06 CST）**：监督进程 PID 3136298 持续运行，六个任务已进入转换目录；双卡当前分别采集 `place_dual_shoes`（5060，约 72%）和 `place_cans_plasticbox`（4070，约 43%）。dual_shoes 多次出现 `041_shoe` 不稳定失败，但 episode 编号递增且仍有成功记录，采集继续。
 - **队列巡检（14:06 CST）**：监督进程 PID 3136298 与两路采集进程持续运行；转换目录仍有六个任务，活动任务为 `place_dual_shoes`、`place_cans_plasticbox`。双卡利用率约 82%/83%，日志持续写入帧。
+- **队列巡检（15:07 CST）**：监督进程 PID 3136298 持续运行；前六个任务已完成转换，`place_dual_shoes` 原始采集完成、转换统计到 75/500，`place_cans_plasticbox` 仍在采集。转换使用 CPU，5060 暂空闲、4070 利用率约 45%；队列每卡串行，未抢跑下一任务以避免和监督 worker 争用其数据目录。
