@@ -8,20 +8,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 from dataclasses import dataclass
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+import h5py
 import numpy as np
 import torch
 
 from ...candidates.emix_index import EMIX_INDEX_SCHEMA_VERSION, EmixIndex
 from ...candidates.emix_index_utils import load_emix_index, validate_source_dataset_fingerprint
 from ...datasets import require_lerobot_dataset_root
-from data_processing.instance_annotations import InstanceAnnotations
 from .batch import PolicyTemporalSpec
 
 logger = logging.getLogger(__name__)
@@ -369,22 +369,30 @@ class EmixIndexReader:
             payload[key] = _stack_column(values)
         return {"feature_payload": payload}
 
-    @lru_cache(maxsize=32)
-    def _load_annotation_episode(self, episode_index: int, camera: str) -> InstanceAnnotations:
+    def annotation_frame(self, source_frame_index: int, camera: str) -> tuple[np.ndarray, tuple[str, ...]]:
+        episode_index, frame_index = self._episode_frame_map[source_frame_index]
         path = self.source_root / "annotations" / camera / f"episode{episode_index}.hdf5"
         if not path.is_file():
             raise FileNotFoundError(f"Emix-collage requires paired annotation: {path}")
-        annotation = InstanceAnnotations.load(path)
-        if annotation.dataset_id != self.source_repo_id or annotation.episode_id != f"episode{episode_index}" or annotation.camera != camera:
-            raise ValueError(f"Annotation stream fields do not match dataset frame: {path}")
-        return annotation
-
-    def annotation_frame(self, source_frame_index: int, camera: str) -> tuple[np.ndarray, tuple[str, ...]]:
-        episode_index, frame_index = self._episode_frame_map[source_frame_index]
-        annotation = self._load_annotation_episode(episode_index, camera)
-        if frame_index >= len(annotation.labels) or int(annotation.frame_ids[frame_index]) != frame_index:
-            raise ValueError(f"Annotation frame alignment failed for episode{episode_index} frame {frame_index}")
-        return annotation.labels[frame_index], annotation.objects
+        with h5py.File(path, "r") as handle:
+            expected = (self.source_repo_id, f"episode{episode_index}", camera)
+            actual = tuple(handle.attrs.get(key) for key in ("dataset_id", "episode_id", "camera"))
+            if actual != expected or handle.attrs.get("schema_version") != 1:
+                raise ValueError(f"Annotation stream fields do not match dataset frame: {path}")
+            if "frame_ids" not in handle or "labels" not in handle or "objects" not in handle.attrs:
+                raise ValueError(f"Missing annotation fields: {path}")
+            labels = handle["labels"]
+            if labels.ndim != 3 or labels.dtype.kind not in "ui" or frame_index >= len(labels):
+                raise ValueError(f"Invalid annotation shape or frame for {path}")
+            if int(handle["frame_ids"][frame_index]) != frame_index:
+                raise ValueError(f"Annotation frame alignment failed for episode{episode_index} frame {frame_index}")
+            objects = json.loads(handle.attrs["objects"])
+            if not isinstance(objects, list) or not objects or objects[0] != "background":
+                raise ValueError(f"Invalid annotation object table: {path}")
+            frame = labels[frame_index]
+            if frame.max() >= len(objects):
+                raise ValueError(f"Annotation label outside object table: {path}")
+        return frame, tuple(objects)
 
 
 class EmixPolicyDataset(torch.utils.data.Dataset):

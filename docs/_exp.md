@@ -404,7 +404,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 
 `stack_bowls_two` 的 V1 顶视 bowl **初始位置**默认 x∈[-0.33,0.33]、y∈[-0.15,0.15]（标称矩形 0.198 m²，原生 0.18 m²）；**堆叠放置目标**仍受 place IK 限制，保留 x∈[-0.20,0.05]、y∈[-0.15,0]。两套范围独立。100-seed 试验（不同 seed 区间）分别为 ±0.30 m 起点成功 77/100、专家可采集 71/100；±0.33 m 起点成功 63/100、专家可采集 61/100；±0.33 m 的 200 个 bowl 起点中 185 个超出旧窄带。选择 ±0.33 m 是以更大范围换取较低可采集率；**标称矩形不能等同实际接受轨迹的均匀覆盖，更不能推断十任务所有放置目标都大于原生**。原始逐 seed 证据：`docs/evidence/v1_bowls/wide_spawn_100.pilot.jsonl` 与 `wide_spawn_x033_100.pilot.jsonl`。
 
-执行器 `scripts/run_v1_queue.py` 顺次启动十任务新采集和索引、拼贴五/十、overlay 对照五/十、噪声五/十；当前监督进程 PID `2724642`，状态在 `outputs/v1_experiment_queue/status.json`，完整输出在同目录 `supervisor.log`，各实例 YAML 位于 `configs/scripts/run_v1_*.yaml`。运行中以实际 metrics 和状态文件更新本表，不把排队或运行中写成已完成。
+执行器 `scripts/run_v1_queue.py` 顺次启动十任务新采集和索引、拼贴五/十、overlay 对照五/十、噪声五/十；监督进程 PID 与当前阶段以 `outputs/v1_experiment_queue/status.json` 为准，完整输出在同目录 `supervisor.log`，各实例 YAML 位于 `configs/scripts/run_v1_*.yaml`。运行中以实际 metrics 和状态文件更新本表，不把排队或运行中写成已完成。
 
 ---
 
