@@ -393,7 +393,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
 | 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **完成**；十项 500ep 数据/标注、all10 索引与可视化完成 |
-| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **运行中**；can_basket 59/100 vs defaultDP 67/100，stack_blocks_two 17/100 vs 26/100；bread_basket Emix 31/100 vs defaultDP 43/100；dual_shoes Emix 31/100 vs defaultDP 29/100；blocks_ranking_rgb defaultDP 22/100、Emix 评估 32/100 |
+| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **运行中**；can_basket 59/100 vs defaultDP 67/100，stack_blocks_two 17/100 vs 26/100；bread_basket Emix 31/100 vs defaultDP 43/100；dual_shoes Emix 31/100 vs defaultDP 29/100；blocks_ranking_rgb defaultDP 22/100、Emix 评估 53/100 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
 | 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 已排队 |
@@ -653,3 +653,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检与结果更新（18:56 CST）**：`blocks_ranking_rgb` defaultDP 评估完成 22/100；其 Emix-collage 训练推进至约 16,023/30,000 steps。`dual_shoes` Emix-collage 评估推进至 91/100，视频仍在写入，指标文件尚未生成。监督进程存活，双卡利用率约 63%/98%。
 - **队列巡检与结果更新（19:56 CST）**：`dual_shoes` Emix-collage 评估完成 31/100；`blocks_ranking_rgb` Emix-collage 训练完成并进入评估，推进至 10/100。一个 GPU worker 的静态任务批次已完成，另一个仍在评估 blocks_ranking；利用率采样约 0%/100%。为避免与现有批次重复运行，不抢跑后续任务。监督 PID 3136298 正常等待阶段子进程完成。
 - **队列巡检（20:59 CST）**：`blocks_ranking_rgb` Emix-collage 评估推进至 32/100，最新视频持续写入；对应评估进程及监督 PID 3136298 均存活。GPU 利用率采样约 0%/91%，另一静态任务批次仍已完成，等待本批次剩余任务。
+- **队列巡检（21:59 CST）**：`blocks_ranking_rgb` Emix-collage 评估推进至 53/100，最新视频持续写入，监督及评估进程存活。利用率约 0%/100%；空闲卡对应已完成的静态批次，本阶段暂无可安全前移的独立任务。
