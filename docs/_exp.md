@@ -393,7 +393,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 | 顺序 | 协议代号 | 任务/模型 | 状态 |
 |---|---|---|---|
 | 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **完成**；十项 500ep 数据/标注、all10 索引与可视化完成 |
-| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **运行中**；can_basket 59/100 vs defaultDP 67/100，stack_blocks_two 17/100 vs 26/100；bread_basket Emix 31/100 vs defaultDP 43/100；dual_shoes defaultDP 29/100，Emix 评估 16/100；blocks_ranking_rgb defaultDP 评估 29/100 |
+| 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **运行中**；can_basket 59/100 vs defaultDP 67/100，stack_blocks_two 17/100 vs 26/100；bread_basket Emix 31/100 vs defaultDP 43/100；dual_shoes defaultDP 29/100、Emix 评估 34/100；blocks_ranking_rgb defaultDP 评估 51/100 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | 已排队 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
 | 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 已排队 |
@@ -647,3 +647,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检与结果更新（12:52 CST）**：bread_basket Emix-collage 评估完成 31/100（defaultDP 43/100），dual_shoes defaultDP 完成 29/100；GPU worker 已进入 `blocks_ranking_rgb` defaultDP 训练（约 10,606/30,000 steps）与 `dual_shoes` Emix-collage 训练（约 4,727/30,000 steps）。监督 PID 3136298 存活，双卡利用率约 97%/99%。
 - **队列巡检（13:53 CST）**：`blocks_ranking_rgb` defaultDP 评估推进至 7/100，最新 episode 视频正在写入；`dual_shoes` Emix-collage 训练推进至约 24,384/30,000 steps。监督与 worker 进程存活、日志持续增长，双卡约 99%/100%。
 - **队列巡检（14:54 CST）**：`blocks_ranking_rgb` defaultDP 评估推进至 29/100，`dual_shoes` Emix-collage 评估推进至 16/100；两路评估进程和监督进程均存活，日志持续增长。GPU 利用率采样为约 2%/27%，负载低于训练阶段；当前两个 worker 都在推进评估，无空闲 worker 可接队列后续任务。
+- **队列巡检（15:54 CST）**：`blocks_ranking_rgb` defaultDP 评估推进至 51/100，`dual_shoes` Emix-collage 评估推进至 34/100，最新视频持续写入。监督和两路评估进程存活；双卡利用率采样约 99%/5%，4070 的评估仍有 episode 进展，负载呈间歇性。
