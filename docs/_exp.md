@@ -394,7 +394,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 |---|---|---|---|
 | 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **完成**；十项 500ep 数据/标注、all10 索引与可视化完成 |
 | 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **完成**；can_basket 59/100 vs defaultDP 67/100；stack_blocks_two 17/100 vs 26/100；bread_basket 31/100 vs 43/100；dual_shoes 31/100 vs 29/100；blocks_ranking_rgb 18/100 vs 22/100 |
-| 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | **运行中**；`place_bread_skillet` Emix-collage 82/100 vs defaultDP 83/100；`place_burger_fries` Emix-collage 29/100 vs defaultDP 37/100；`stack_bowls_two` Emix-collage 89/100 vs defaultDP 90/100；`place_cans_plasticbox` Emix-collage 11/100 vs defaultDP 16/100；`blocks_ranking_size` defaultDP 1/100、Emix 评估推进至 60/100 |
+| 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | **运行中**；`place_bread_skillet` Emix-collage 82/100 vs defaultDP 83/100；`place_burger_fries` Emix-collage 29/100 vs defaultDP 37/100；`stack_bowls_two` Emix-collage 89/100 vs defaultDP 90/100；`place_cans_plasticbox` Emix-collage 11/100 vs defaultDP 16/100；`blocks_ranking_size` defaultDP 1/100、Emix 评估推进至 73/100 |
 | 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | 已排队 |
 | 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 已排队 |
 
@@ -686,3 +686,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检（04:19 CST）**：`blocks_ranking_size` Emix-collage 评估推进至 33/100，视频持续写入；监督与评估进程存活，GPU 利用率约 99%/0%。
 - **队列巡检（05:19 CST）**：`blocks_ranking_size` Emix-collage 评估推进至 46/100，视频持续写入，监督及评估进程存活；GPU 利用率约 99%/0%。
 - **队列巡检（06:20 CST）**：`blocks_ranking_size` Emix-collage 评估推进至 60/100，视频持续写入；监督和评估进程存活，GPU 利用率采样约 2%/0%。
+- **队列巡检（07:20 CST）**：`blocks_ranking_size` Emix-collage 评估推进至 73/100，视频持续写入，监督与评估进程存活；GPU 利用率采样约 99%/0%。
