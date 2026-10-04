@@ -395,7 +395,7 @@ python scripts/run.py --config configs/scripts/run_v0_noise_tn_en.yaml --phase t
 | 1 | `v1-data-all10` | 当前 V1 实现、顶视、十任务各 500ep；同步实例归属图，84×84 输入 | **完成**；十项 500ep 数据/标注、all10 索引与可视化完成 |
 | 2 | `v1-collage-s5` | 历史 Emix 提升最大 2 任务（can_basket、dual_shoes）与较差 3 任务（bread_basket、stack_blocks_two、blocks_ranking_rgb）；各跑 defaultDP 与 Emix-collage | **完成**；can_basket 59/100 vs defaultDP 67/100；stack_blocks_two 17/100 vs 26/100；bread_basket 31/100 vs 43/100；dual_shoes 31/100 vs 29/100；blocks_ranking_rgb 18/100 vs 22/100 |
 | 3 | `v1-collage-all10` | 同参数扩至全部十任务，复用 s5 已完成模型 | **完成**；bread_skillet 82/83、burger_fries 29/37、stack_bowls_two 89/90、cans_plasticbox 11/16、blocks_ranking_size 3/1（Emix-collage/defaultDP，均为 100 episode 成功数） |
-| 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | **运行中（overlay_s5_control）**；stack_blocks_two Emix-overlay 36/100；place_can_basket Emix-overlay 69/100；place_bread_basket Emix-overlay 44/100；place_dual_shoes Emix-overlay 36/100；blocks_ranking_rgb Emix-overlay 评估推进至 22/100 |
+| 4 | `v1-overlay-s5/all10` | 同数据、同训练参数的 Emix-overlay 方法对照，先五后十 | **运行中（overlay_s5_control）**；stack_blocks_two Emix-overlay 36/100；place_can_basket Emix-overlay 69/100；place_bread_basket Emix-overlay 44/100；place_dual_shoes Emix-overlay 36/100；blocks_ranking_rgb Emix-overlay 评估推进至 42/100 |
 | 5 | `v1-noise-s5/all10` | 后续排期：逐通道高斯噪声训练，先 clean 评估、再同噪声评估；先五后十；defaultDP 与 Emix-overlay | 已排队 |
 
 `Emix-overlay` 保留旧图像线性叠加 `αI1+(1-α)I2` 与 `αloss1+(1-α)loss2`。`Emix-collage` 在第二图可见的 `task:` 对象中选一个，使用同帧的紧凑归属图把该对象像素粘入第一图，其余像素保持第一图；损失为 `loss1+loss2`，不乘 α、不除以 2。背景、机器人和墙不参与对象选择。首轮不加入阶段判断；阶段规则是 TODEV 条目 3 的后续独立变量。84×84 缩小时小物体和边缘归属的不可消除歧义保留为边界，不声称修复。
@@ -702,3 +702,4 @@ dual_shoes 鞋盒 x 向 4×）；skillet 与原生相当；**唯一反例 stack_
 - **队列巡检（20:32 CST）**：place_dual_shoes Emix-overlay 评估推进至 89/100，blocks_ranking_rgb 评估推进至 37/100。两路评估进程和监督进程存活，评估日志持续前进；GPU 利用率采样约 6%/71%。
 - **队列巡检与阶段更新（21:32 CST）**：place_dual_shoes Emix-overlay 评估完成 36/100。blocks_ranking_rgb 的先前评估目录被队列检测为不完整并清理，当前已重新评估至 1/100；评估进程在运行并占用约 3.7 GiB GPU 显存、CPU 约 112%，没有重启或干预。监督存活，GPU 利用率采样约 0%/42%。
 - **队列巡检（22:33 CST）**：blocks_ranking_rgb Emix-overlay 重评由 1/100 推进至 22/100；对应评估进程存活，监督进程存活，GPU 利用率采样约 0%/100%（当前负载由该 worker 使用的设备承担）。其余已完成结果保持不变。
+- **队列巡检（23:33 CST）**：blocks_ranking_rgb Emix-overlay 重评推进至 42/100（较上次增加 20 episode）；评估 worker 与监督进程存活。GPU 利用率采样约 0%/38%，评估日志持续增长。
