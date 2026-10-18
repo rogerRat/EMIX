@@ -1,3 +1,6 @@
+# Historical emix pip freeze. Install with dependencies/_install.sh, which selects
+# cu128 PyTorch and filters legacy/conflicting GPU, Gymnasium and OpenCV pins.
+# Do not install this file directly into a fresh environment.
 absl-py==2.4.0
 accelerate==1.13.0
 aiohappyeyeballs==2.6.1

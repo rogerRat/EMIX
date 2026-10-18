@@ -55,11 +55,41 @@
 
 ### 安装与环境配置
 
+项目使用两个独立的 Conda 环境。`emix` 用于数据转换、索引与训练；
+`emix-twin` 用于 RoboTwin 仿真。Linux 无头服务器只要容器暴露 NVIDIA
+`graphics` 能力，就可以用 Vulkan ICD 启动 SAPIEN，不需要 X11 或 `DISPLAY`。
+在 Ubuntu 22.04 + RTX 5090 上，缺少系统 `libEGL.so.1` 曾使 Vulkan 无法
+创建实例；安装 EGL/GLVND 包后，物理步进和 GPU 相机渲染均通过。
+安装脚本与三个依赖清单集中在根目录 `dependencies/`；默认批次配置只使用
+CUDA 设备 0。仿真安装会按可见 GPU 的计算能力自动决定是否构建 Blackwell OIDN。
+
+从仓库根目录选择所需入口：
+
+| 脚本 | 唯一职责 |
+| --- | --- |
+| `dependencies/_instal_sapien.sh` | 检测、补齐 Vulkan/EGL 与 SAPIEN 组件，并实测无头渲染；不创建 Conda 环境 |
+| `dependencies/_install.sh` | 一键创建或复用主环境 `emix` |
+| `dependencies/_install_twin.sh` | 一键创建或复用仿真环境 `emix-twin`，调用 SAPIEN 检查并安装仿真依赖 |
+
 ```bash
-conda create -n emix python=3.10 -y
-conda activate emix
-pip install -r requirements.txt
+bash dependencies/_install.sh
+bash dependencies/_install_twin.sh
+# 仿真环境的只读复核：
+bash dependencies/_install_twin.sh --check
 ```
+
+如果只需验证已存在的 Python 环境是否具备 SAPIEN 图形能力：
+
+```bash
+bash dependencies/_instal_sapien.sh \
+  --python /root/miniconda3/envs/emix-twin/bin/python --check
+```
+
+安装顺序、组件边界、无头服务器排障与验收命令见
+[SOP-00 环境安装](docs/sop/SOP-00-environment-installation.md)。
+本次故障与实测输出见[修复记录](docs/20261019_emix_sapien_runtime_repair.md)。
+`dependencies/requirements.txt` 是主环境的历史锁定快照，含需由安装脚本分流的 CUDA 轮子；
+不要直接对新环境运行 `pip install -r dependencies/requirements.txt`。
 
 ### 数据生成
 

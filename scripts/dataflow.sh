@@ -13,12 +13,10 @@
 #   --num  <n>      Number of episodes to collect (default: 500).  Written into
 #                   third_party/RoboTwin/task_config/left/<variant>/<task>.yml as
 #                   episode_num and used to gate the collection completeness check.
-#   --cuda <n>      CUDA device for the collect/convert stages: 0 -> RTX 4070,
-#                   1 -> RTX 5060.  Default: 0.  NOTE: nvidia-smi labels the
-#                   cards REVERSED from CUDA (nvidia-smi 0 = 5060, 1 = 4070);
-#                   this flag mirrors CUDA_VISIBLE_DEVICES, not nvidia-smi.
-#                   --cuda 1 additionally strips /usr/local/cuda from
-#                   LD_LIBRARY_PATH so cuBLASLt resolves to the env build.
+#   --cuda <n>      CUDA device for the collect/convert stages (default: 0).
+#                   The index is checked against visible CUDA devices.
+#                   Blackwell cards automatically use the environment CUDA
+#                   libraries instead of a stale /usr/local/cuda build.
 #                   The build/vis stages stay CPU-only.
 #   --seed <n>      Fix the collection's scene seed: writes seed.txt with
 #                   n, n+1, ..., n+num-1 into the collection dir and sets
@@ -48,8 +46,9 @@ set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
 
-EMIX_TWIN="/home/rogerspyke/miniforge3/envs/emix-twin/bin/python"  # RoboTwin collection
-EMIX="/home/rogerspyke/miniforge3/envs/emix/bin/python"            # convert / index / vis
+CONDA_ENVS="$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import oidn_env; print(oidn_env.CONDA_ENVS)')"
+EMIX_TWIN="$CONDA_ENVS/emix-twin/bin/python"  # RoboTwin collection
+EMIX="$CONDA_ENVS/emix/bin/python"            # convert / index / vis
 
 COLLECTION_ROOT="$ROOT/data/robotwin"
 DATASET_ROOT="$ROOT/data/lerobot"
@@ -102,7 +101,8 @@ done
 # ---- validate inputs -------------------------------------------------------
 [ -n "$TASK" ] || { log "FAIL: --task is required"; usage 1; }
 [[ "$NUM" =~ ^[0-9]+$ ]] && [ "$NUM" -ge 1 ] || { log "FAIL: --num must be a positive integer (got '$NUM')"; exit 1; }
-case "$CUDA_IDX" in 0|1) ;; *) log "FAIL: --cuda must be 0 (RTX 4070) or 1 (RTX 5060), got '$CUDA_IDX'"; exit 1 ;; esac
+[[ "$CUDA_IDX" =~ ^[0-9]+$ ]] || { log "FAIL: --cuda must be a non-negative CUDA index (got '$CUDA_IDX')"; exit 1; }
+[[ -x "$EMIX_TWIN" && -x "$EMIX" ]] || { log "FAIL: install emix and emix-twin with dependencies/_install*.sh first"; exit 1; }
 if [ -n "$SEED" ] && ! [[ "$SEED" =~ ^[0-9]+$ ]]; then
     log "FAIL: --seed must be a non-negative integer (got '$SEED')"; exit 1
 fi
@@ -166,16 +166,12 @@ fi
 
 # ---- GPU runtime ------------------------------------------------------------
 export CUDA_VISIBLE_DEVICES="$CUDA_IDX"
-# Self-document the physical card behind this CUDA index.  On this machine
-# nvidia-smi's enumeration is REVERSED from CUDA's: CUDA 0 -> RTX 4070 (shown as
-# nvidia-smi GPU 1), CUDA 1 -> RTX 5060 (shown as nvidia-smi GPU 0).  Print the
-# real name so "--cuda N" maps to the card the user expects.
-gpu_name="$(CUDA_VISIBLE_DEVICES="$CUDA_IDX" "$EMIX_TWIN" -c 'import torch; print(torch.cuda.get_device_name(0))' 2>/dev/null || echo 'probe failed')"
+gpu_info="$(CUDA_VISIBLE_DEVICES="$CUDA_IDX" "$EMIX_TWIN" -c 'import torch; assert torch.cuda.is_available() and torch.cuda.device_count() == 1; print(torch.cuda.get_device_name(0)); print(torch.cuda.get_device_capability(0)[0])')" || { log "FAIL: CUDA device $CUDA_IDX is unavailable"; exit 1; }
+gpu_name="$(printf '%s\n' "$gpu_info" | head -1)"
+gpu_major="$(printf '%s\n' "$gpu_info" | tail -1)"
 log "cuda: CUDA_VISIBLE_DEVICES=$CUDA_IDX -> $gpu_name"
-if [ "$CUDA_IDX" = "1" ]; then
-    # RTX 5060 (Blackwell): a stale /usr/local/cuda cuBLASLt.so.12.1 shadows
-    # torch's bundled build via LD_LIBRARY_PATH and breaks every GEMM.  Drop
-    # those entries (same rule as scripts/oidn_env.py strip_stale_cuda).
+if ((gpu_major >= 10)); then
+    # Blackwell: an older /usr/local/cuda can shadow the environment cuBLASLt.
     KEPT=""
     IFS=':' read -r -a ENTRIES <<< "${LD_LIBRARY_PATH:-}"
     for entry in "${ENTRIES[@]}"; do
@@ -185,6 +181,10 @@ if [ "$CUDA_IDX" = "1" ]; then
         esac
     done
     if [ -n "$KEPT" ]; then export LD_LIBRARY_PATH="$KEPT"; else unset LD_LIBRARY_PATH; fi
+fi
+if [[ -f "$CONDA_ENVS/emix-twin/etc/conda/activate.d/robotwin_cuda_runtime.sh" ]]; then
+    export CONDA_PREFIX="$CONDA_ENVS/emix-twin"
+    source "$CONDA_PREFIX/etc/conda/activate.d/robotwin_cuda_runtime.sh"
 fi
 
 # ---- artifact guards ---------------------------------------------------------

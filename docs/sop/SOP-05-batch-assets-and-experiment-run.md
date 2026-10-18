@@ -1,5 +1,10 @@
 # SOP-05：批量资产构建（assets.py）与实验流水线（run.py）
 
+环境安装以 [SOP-00](SOP-00-environment-installation.md) 为准。下文的
+4070/5060 双卡分工是旧实验主机的批次配置；当前默认 `gpu_batches` 和
+`assets.py --gpus` 均使用 CUDA 0，适用于单张 RTX 5090。当前安装入口将 Blackwell 所需 OIDN
+构建在同一个 `emix-twin` 环境中。
+
 本文档说明两个批量驱动脚本的当前用法：
 
 - [`scripts/assets.py`](../../scripts/assets.py)：GPU worker 从共享工作清单动态抢单、每卡任一时刻至多一个仿真器，批量构建
@@ -125,13 +130,13 @@ RTX 5060。`--gpus` 使用 CUDA 编号。
 | GPU | 物理 卡 | 采集环境 | 说明 |
 |-----|---------|----------|------|
 | `0` | RTX 4070 | `emix-twin` | 直接调用 |
-| `1` | RTX 5060 (sm_120) | `emix-twin-5060` | Blackwell 垫片（见下） |
+| `1` | RTX 5060 (sm_120) | `emix-twin` | Blackwell 库路径处理（见下） |
 
 环境选择**不按 GPU 序号硬编码**，而是由 [`scripts/oidn_env.py`](../../scripts/oidn_env.py)
-在运行时用 torch 探测每张卡的 compute capability 再路由（可用
-`python scripts/oidn_env.py 0 1` 单独查看）。Blackwell 卡（>= sm_100）触发两件事：
-SAPIEN 的 OIDN 去噪插件只有 `emix-twin-5060` 提供 sm_120 构建，同时 curobo
-编译运动学需要该环境的新 libstdc++ 和 ninja——所以垫片会在子进程环境里剥离
+在运行时用 torch 探测每张卡的 compute capability（可用
+`python scripts/oidn_env.py 0 1` 单独查看）。Blackwell 卡（>= sm_100）的
+OIDN 由 `_install_twin.sh` 在 `emix-twin` 内构建；Curobo 编译运动学需要该
+环境的新 libstdc++ 和 ninja，所以运行时会在子进程环境里剥离
 `LD_LIBRARY_PATH` 中的 `/usr/local/cuda` 条目（旧 cuBLASLt 会炸 GEMM），并补上
 该环境的 `PATH`/`CUDA_HOME`/`LD_LIBRARY_PATH`/`LD_PRELOAD`。
 
@@ -148,7 +153,7 @@ SAPIEN 的 OIDN 去噪插件只有 `emix-twin-5060` 提供 sm_120 构建，同�
 |------|------|
 | `project` | `robotwin_root`、`runtime_config_root`（生成配置目录）、`log_root` |
 | `gpu_batches` | 每张 CUDA 设备的任务列表（当前 0:4、1:6），即任务集与分卡方案 |
-| `environments` | 各阶段 Conda 环境名（Blackwell 卡由 `scripts/oidn_env.py` 自动路由，无需 `per_gpu`） |
+| `environments` | 各阶段 Conda 环境名（RoboTwin 阶段统一使用 `emix-twin`） |
 | `pipeline` | 每任务 500 episodes、84x84、fps 17、评估 100 episodes seed 0 等 |
 | `training` | batch_size 64、30000 steps、save_freq 5000 等（`encoder_debug` 默认开启） |
 | `emix` | alpha_mode/beta、loss_weight、mixup scheduler（`debug`/`visual_keys` 默认补全） |
@@ -201,15 +206,15 @@ python scripts/run.py --cuda 0
 
 | 阶段（`environments` 键） | GPU 0 (4070) | GPU 1 (5060) |
 |---------------------------|--------------|--------------|
-| `robotwin`（采集、GPU 探针） | `emix-twin` | `emix-twin-5060` |
+| `robotwin`（采集、GPU 探针） | `emix-twin` | `emix-twin` |
 | `preprocessing`（转换、索引、vis） | `emix` | `emix` |
 | `training`（训练） | `emix` | `emix` |
-| `evaluation`（在线评估） | `emix-twin` | `emix-twin-5060` |
+| `evaluation`（在线评估） | `emix-twin` | `emix-twin` |
 
-`robotwin`/`evaluation` 两个键在 Blackwell 卡上由 `scripts/oidn_env.py`
-自动路由到 `emix-twin-5060`，并剥离子进程 `LD_LIBRARY_PATH` 中的
+`robotwin`/`evaluation` 两个键统一使用 `emix-twin`；Blackwell 卡仍剥离
+子进程 `LD_LIBRARY_PATH` 中的
 `/usr/local/cuda`（防止系统 cuBLASLt 覆盖环境内构建）。环境切分是有意的
-（RoboTwin 运行时只在 `emix-twin*`），不要合并。
+（RoboTwin 运行时只在 `emix-twin`），不要合并。
 
 ### 3.5 运行前校验（仅完整流程）
 

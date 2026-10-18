@@ -29,9 +29,8 @@ import oidn_env
 
 
 ROOT = Path(__file__).resolve().parents[1]
-# Which twin interpreter a GPU gets (emix-twin vs the Blackwell emix-twin-5060
-# OIDN variant) is detected per card in scripts/oidn_env.py.
-EMIX = Path("/home/rogerspyke/miniforge3/envs/emix/bin/python")
+# Both environments are installed beneath the detected Conda root.
+EMIX = oidn_env.CONDA_ENVS / "emix" / "bin" / "python"
 # Canonical public-name suffix per centred-arm camera variant.
 VARIANT_SUFFIXES = {
     "cen_arm_right_wide_cam": "_left_cen_arm_right_wide_cam",
@@ -87,8 +86,8 @@ def complete_dataset(path: Path, episodes: int, width: int, height: int) -> bool
 
 
 def stage_environment(gpu: str) -> dict[str, str]:
-    # Blackwell cards route to emix-twin-5060, get the stale cuBLASLt stripped,
-    # and receive the activate.d hook mirror — all decided in scripts/oidn_env.py.
+    # Blackwell cards use the shared emix-twin runtime, with stale cuBLASLt
+    # stripped and the activate.d hook mirrored by scripts/oidn_env.py.
     return oidn_env.stage_environment(gpu)
 
 
@@ -190,7 +189,7 @@ def main() -> int:
     parser.add_argument("--variant", choices=sorted(VARIANT_SUFFIXES),
                         default="cen_arm_right_wide_cam",
                         help="centred-arm camera variant selecting the task suffix")
-    parser.add_argument("--gpus", nargs="+", default=["0", "1"])
+    parser.add_argument("--gpus", nargs="+", default=["0"])
     parser.add_argument("--episodes", type=int, default=5)
     parser.add_argument("--stages", nargs="+", choices=ALL_STAGES, default=list(ALL_STAGES))
     parser.add_argument("--image-width", type=int, default=224)

@@ -110,22 +110,17 @@ emix:
     end_batch_prob: 0.0
 
 # The flow enforces global phase barriers: all ten tasks collect and convert,
-# then one CPU/RAM-intensive EmixIndex queue completes, then both GPU queues
-# train and evaluate. Each GPU list remains serial inside the parallel phases.
+# then the CPU/RAM-intensive EmixIndex queue completes before training and
+# evaluation. The default CUDA 0 queue is serial inside each phase.
 gpu_batches:
-  # 50/50 split: five tasks per card. The per-GPU queue stays serial inside
-  # each parallel phase. Within-batch order is applied automatically by
-  # flow.validate(): tasks whose dataset has fewer average frames per episode
-  # run first.
-  "0":
-    - blocks_ranking_rgb_left_cen_arm_top_cam
-    - place_bread_basket_left_cen_arm_top_cam
-    - place_burger_fries_left_cen_arm_top_cam
-    - place_cans_plasticbox_left_cen_arm_top_cam
-    - stack_blocks_two_left_cen_arm_top_cam
-  "1":
-    - blocks_ranking_size_left_cen_arm_top_cam
-    - place_bread_skillet_left_cen_arm_top_cam
-    - place_can_basket_left_cen_arm_top_cam
-    - place_dual_shoes_left_cen_arm_top_cam
-    - stack_bowls_two_left_cen_arm_top_cam
+  '0':
+  - blocks_ranking_rgb_left_cen_arm_top_cam
+  - place_bread_basket_left_cen_arm_top_cam
+  - place_burger_fries_left_cen_arm_top_cam
+  - place_cans_plasticbox_left_cen_arm_top_cam
+  - stack_blocks_two_left_cen_arm_top_cam
+  - blocks_ranking_size_left_cen_arm_top_cam
+  - place_bread_skillet_left_cen_arm_top_cam
+  - place_can_basket_left_cen_arm_top_cam
+  - place_dual_shoes_left_cen_arm_top_cam
+  - stack_bowls_two_left_cen_arm_top_cam

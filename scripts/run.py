@@ -1,4 +1,4 @@
-"""Run the fixed two-GPU RoboTwin left-arm DP/EMIX experiment matrix.
+"""Run the configured RoboTwin left-arm DP/EMIX experiment matrix.
 
 Phases (enforced global barriers, in order): prepare -> index -> vis ->
 train-eval. The ``vis`` phase renders every task with a complete EmixIndex into
@@ -327,12 +327,9 @@ def per_gpu_environment(config: dict[str, Any], gpu: str | None, environment_key
     """Resolve a Conda environment name for one GPU, honoring per-GPU overrides.
 
     ``environments.per_gpu.<gpu>.<key>`` wins over the shared
-    ``environments.<key>`` default, so each GPU card can pin its own compatible
-    runtime explicitly. Below that, the RoboTwin runtime keys (``robotwin`` /
-    ``evaluation``) are auto-routed by scripts/oidn_env.py: a Blackwell GPU
-    (sm_120, whose SAPIEN OIDN plugin only exists in the 5060 variant) gets
-    ``emix-twin-5060`` without any GPU-index pinning, because CUDA enumeration
-    order differs from nvidia-smi and is not stable across cards.
+    ``environments.<key>`` default. The installer builds the required OIDN
+    CUDA architecture inside one ``emix-twin`` environment, including on
+    Blackwell; GPU-specific CUDA library cleanup is handled separately.
     """
     environments = require_mapping(config, "environments")
     per_gpu = environments.get("per_gpu")
@@ -345,9 +342,19 @@ def per_gpu_environment(config: dict[str, Any], gpu: str | None, environment_key
     environment_name = environments.get(environment_key)
     if not isinstance(environment_name, str) or not environment_name:
         raise ValueError(f"environments.{environment_key} must name a Conda environment")
-    if environment_key in ("robotwin", "evaluation") and gpu is not None and oidn_env.is_blackwell(gpu):
-        return oidn_env.EMIX_TWIN_5060_NAME
     return environment_name
+
+
+def conda_executable_path(config: dict[str, Any]) -> str:
+    """Resolve an explicit Conda path or the installer-detected Conda root."""
+    configured = str(require_mapping(config, "environments").get("conda_executable", "auto"))
+    if configured == "auto":
+        candidate = oidn_env.CONDA_ENVS.parent / "bin" / "conda"
+        configured = str(candidate if candidate.is_file() else (shutil.which("conda") or ""))
+    path = Path(configured)
+    if not path.is_absolute() or not path.is_file() or not os.access(path, os.X_OK):
+        raise FileNotFoundError(f"Conda executable is unavailable: {configured!r}")
+    return str(path)
 
 
 def command_env(config: dict[str, Any], gpu: str) -> dict[str, str]:
@@ -377,7 +384,7 @@ def conda_command(
     when one is configured; pass ``None`` to use the shared default.
     """
     environments = require_mapping(config, "environments")
-    conda_executable = str(environments.get("conda_executable", ""))
+    conda_executable = conda_executable_path(config)
     environment_name = per_gpu_environment(config, gpu, environment_key)
     if command and command[0] == "python":
         command = ("python", "-u", *command[1:])
@@ -427,7 +434,7 @@ def all_environment_names(config: dict[str, Any]) -> set[str]:
 def validate_conda_environments(config: dict[str, Any]) -> None:
     """Verify each configured Conda environment before creating GPU workers."""
     environments = require_mapping(config, "environments")
-    conda_executable = str(environments.get("conda_executable", ""))
+    conda_executable = conda_executable_path(config)
     for environment_name in sorted(all_environment_names(config)):
         command = [conda_executable, "run", "--no-capture-output", "-n", environment_name, "python", "--version"]
         try:
@@ -1254,13 +1261,7 @@ def validate(config: dict[str, Any], cuda: list[str]) -> dict[str, list[str]]:
     benchmark = configured_path(config, "robotwin_root")
     task_config_root = configured_path(config, "task_config_root")
     environments = require_mapping(config, "environments")
-    conda_executable = str(environments.get("conda_executable", ""))
-    conda_path = Path(conda_executable)
-    if not conda_path.is_absolute() or not conda_path.is_file() or not os.access(conda_path, os.X_OK):
-        raise FileNotFoundError(
-            "environments.conda_executable must be an executable absolute path, "
-            f"got: {conda_executable!r}"
-        )
+    conda_executable_path(config)
     for environment_key in ("robotwin", "preprocessing", "training", "evaluation"):
         if not isinstance(environments.get(environment_key), str) or not environments[environment_key]:
             raise ValueError(f"environments.{environment_key} must name a Conda environment")

@@ -22,9 +22,9 @@ Host emix
 
 ## 故障链与修复
 
-1. 基础环境运行 `scripts/if_visual.py` 时，GPU 检测通过，随后报 `ModuleNotFoundError: No module named 'sapien'`。新容器只有 Conda `base`，没有项目仿真环境。
+1. 基础环境运行当时的 `scripts/if_visual.py`（现位于 `dependencies/if_visual.py`）时，GPU 检测通过，随后报 `ModuleNotFoundError: No module named 'sapien'`。新容器只有 Conda `base`，没有项目仿真环境。
 2. 创建 `emix-twin` 并安装 `sapien==3.0.0b1` 后，SAPIEN 导入报 `ModuleNotFoundError: No module named 'pkg_resources'`。原因是新建环境的 `setuptools==84.0.0` 已移除旧接口，而此 SAPIEN 版本仍导入它。固定 `setuptools<81`；本次安装版本为 `80.10.2`。
-3. 项目依赖要求 `numpy==1.26.4`。当时 pip 自动选择的 OpenCV 新版本要求 NumPy 2；将 `opencv-python` 固定为 `4.10.0.84`，与 NumPy 1.26.4 同时安装。上述两个约束已写入仓库根目录的 `requirements-emix-twin.txt`，避免新环境重建时复发。
+3. 项目依赖要求 `numpy==1.26.4`。当时 pip 自动选择的 OpenCV 新版本要求 NumPy 2；将 `opencv-python` 固定为 `4.10.0.84`，与 NumPy 1.26.4 同时安装。上述两个约束现统一写在仓库根目录的 `dependencies/requirements-sapien.txt`，并由 `dependencies/requirements-emix-twin.txt` 引用，避免新环境重建时复发。
 4. 此后 SAPIEN 报 `RuntimeError: failed to find a rendering device`。尽管 `nvidia-smi` 正常、`NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics,video`，NVIDIA Vulkan ICD 仍无法提供 `vkCreateInstance`。容器缺少系统 Vulkan loader 和 GLVND/EGL 库；`strace` 发现多次查找 `libEGL.so.1` 返回 `ENOENT`。安装下述 apt 包后，`vulkaninfo` 枚举出 RTX 5090，SAPIEN 渲染成功。
 5. 排查中还发现容器没有可访问的 `/dev/nvidia-modeset`。曾临时创建节点进行诊断，但打开它返回 `Operation not permitted`；该节点已经删除。补齐 EGL/GLVND 后，**无需该节点也能成功运行本次 Vulkan 和 SAPIEN 验证**，因此不能将它认定为此次启动失败的根因。
 
@@ -39,15 +39,11 @@ ssh emix
 git clone --depth 1 --single-branch https://github.com/rogerRat/EMIX.git /root/EMIX
 cd /root/EMIX
 
-apt-get update
-DEBIAN_FRONTEND=noninteractive apt-get install -y \
-  libvulkan1 vulkan-tools libegl1 libgl1 libglx0 libopengl0
-
-/root/miniconda3/bin/conda create -n emix-twin python=3.10 -y
-/root/miniconda3/envs/emix-twin/bin/python -m pip install \
-  -r requirements-emix-twin.txt
-/root/miniconda3/envs/emix-twin/bin/python -m pip check
+bash dependencies/_install_twin.sh
+bash dependencies/_install_twin.sh --check
 ```
+
+以上为后来固化的一键安装和验收入口；本次故障排查时曾手工安装下面列出的 apt/Python 包。`_install_twin.sh` 还安装 CUDA PyTorch、Curobo，并在 Blackwell GPU 上构建 CUDA OIDN；详见 [SOP-00](sop/SOP-00-environment-installation.md)。
 
 本次实际安装的关键版本：`sapien 3.0.0b1`、`numpy 1.26.4`、`opencv-python 4.10.0.84`、`setuptools 80.10.2`、`mplib 0.2.1`。系统包版本为 `libegl1/libgl1/libglx0/libopengl0 1.4.0-1`、`libvulkan1 1.3.204.1-2`、`vulkan-tools 1.3.204.0+dfsg1-1`。`pip check` 输出 `No broken requirements found.`
 
@@ -56,7 +52,7 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y \
 ```bash
 VK_ICD_FILENAMES=/etc/vulkan/icd.d/nvidia_icd.json vulkaninfo --summary
 cd /root/EMIX
-/root/miniconda3/envs/emix-twin/bin/python scripts/if_visual.py
+/root/miniconda3/envs/emix-twin/bin/python dependencies/if_visual.py
 ```
 
 预期 `vulkaninfo` 中出现 `deviceName = NVIDIA GeForce RTX 5090`、`driverName = NVIDIA`。本次项目探针输出：

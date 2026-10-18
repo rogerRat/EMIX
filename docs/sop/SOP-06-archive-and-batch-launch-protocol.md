@@ -33,8 +33,8 @@
   `rpy_eps 0.26 rad(15°)`、`exclude_tail_seconds 0.1 s @17fps`、
   `cross_episode_only`、`gripper_consistency`
 - 评测：每任务 `100 episodes`、`seed 0`、保存视频
-- 环境：robotwin/evaluation = `emix-twin`（Blackwell 卡自动路由
-  `emix-twin-5060`），training/preprocessing = `emix`；不手动改写子命令环境
+- 环境：robotwin/evaluation = `emix-twin`，training/preprocessing = `emix`；
+  Blackwell GPU 的 OIDN 在安装时构建，不手动改写子命令环境
 
 ### 1.3 启动前检查
 

@@ -12,13 +12,10 @@ TORCH_VERSION="2.10.0"
 TORCHAUDIO_VERSION="2.10.0"
 TORCHVISION_VERSION="0.25.0"
 
-# ML libraries to install after the main dependency resolution
-ML_LIBS="scikit-learn seaborn umap-learn pynndescent joblib threadpoolctl numba llvmlite"
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REQUIREMENTS_FILE="${SCRIPT_DIR}/../requirements.txt"
-FILTERED_REQUIREMENTS="${SCRIPT_DIR}/.requirements_filtered.txt"
-EXPORT_FILE="${SCRIPT_DIR}/../emix_requ.txt"
+REQUIREMENTS_FILE="${SCRIPT_DIR}/requirements.txt"
+FILTERED_REQUIREMENTS="$(mktemp "${TMPDIR:-/tmp}/emix-requirements.XXXXXX")"
+trap 'rm -f "$FILTERED_REQUIREMENTS"' EXIT
 
 echo "============================================================"
 echo "[Step 1/6] Preparing conda environment: ${ENV_NAME}"
@@ -87,40 +84,32 @@ echo "============================================================"
 echo "[Step 4/6] Installing remaining dependencies from PyPI"
 echo "============================================================"
 
-# Filter out: torch/lerobot (installed above),
-#             cu13 nvidia packages (keep cu12 only),
-#             ML libs (installed separately in step 6),
-#             annotated-doc / cuda-toolkit (not needed).
-grep -v -E "^(torch|torchaudio|torchvision|lerobot|modelscope-hub)\b" \
+# requirements.txt is a historical pip freeze. Filter packages whose pinned
+# versions conflict with the selected cu128 Torch or LeRobot 0.4.4 runtime.
+# The temporary file lives outside the repository and is removed on exit.
+grep -v -E "^(torch|torchaudio|torchvision|lerobot|modelscope-hub|gymnasium|opencv-python|opencv-python-headless|triton)==" \
     "${REQUIREMENTS_FILE}" \
-  | grep -v -E "^nvidia-(cublas|cuda-cupti|cuda-nvrtc|cuda-runtime|cudnn-cu13|cufft|cufile|curand|cusolver|cusparse|cusparselt-cu13|nccl-cu13|nvjitlink|nvshmem-cu13|nvtx)==" \
+  | grep -v -E "^nvidia-[[:alnum:]-]+==" \
   | grep -v -E "^(cuda-toolkit|annotated-doc)\b" \
-  | grep -v -E "^(${ML_LIBS// /|})\b" \
   > "${FILTERED_REQUIREMENTS}"
 
-echo "Filtered requirements (torch/lerobot/cu13/ML libs removed):"
-echo "---"
-cat "${FILTERED_REQUIREMENTS}"
-echo "---"
-echo ""
+echo "Filtered $(wc -l < "${FILTERED_REQUIREMENTS}") historical requirements; CUDA wheel pins are managed by the cu128 Torch index."
 
 python -m pip install -r "${FILTERED_REQUIREMENTS}"
 
-rm -f "${FILTERED_REQUIREMENTS}"
+echo ""
+echo "============================================================"
+echo "[Step 5/6] Applying headless NumPy/OpenCV compatibility pins"
+echo "============================================================"
+
+# LeRobot requires opencv-python-headless>=4.9,<4.13 and gymnasium>=1.1.1.
+# A newer OpenCV wheel can pull NumPy 2, while this project uses NumPy 1.26.
+python -m pip install "setuptools<81" "numpy==1.26.4" \
+    "opencv-python-headless==4.10.0.84"
 
 echo ""
 echo "============================================================"
-echo "[Step 5/6] Installing ML libraries"
-echo "============================================================"
-echo ""
-echo "Installing: ${ML_LIBS}"
-echo ""
-
-python -m pip install ${ML_LIBS}
-
-echo ""
-echo "============================================================"
-echo "[Step 6/6] Verifying critical imports & exporting requirements"
+echo "[Step 6/6] Verifying critical imports"
 echo "============================================================"
 
 python -c "
@@ -142,15 +131,10 @@ import importlib.metadata as metadata
 print(f'transformers:  {metadata.version(\"transformers\")}')
 print(f'num2words:     {metadata.version(\"num2words\")}')
 "
-
-echo ""
-echo "Exporting full environment to: ${EXPORT_FILE}"
-python -m pip freeze > "${EXPORT_FILE}"
-echo "Done."
+python -m pip check
 
 echo ""
 echo "============================================================"
 echo "Setup complete. Environment '${ENV_NAME}' is ready."
 echo "Activate it with:  conda activate ${ENV_NAME}"
-echo "Requirements exported to: ${EXPORT_FILE}"
 echo "============================================================"

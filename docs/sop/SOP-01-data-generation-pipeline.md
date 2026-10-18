@@ -36,19 +36,17 @@ Conda 环境；`emix-twin` 仅用于 RoboTwin 采集，`emix` 用于转换、索
 
 ## 2. 初始化仓库和环境
 
-从仓库根目录执行。首次使用或 RoboTwin 子模块尚未准备好时，运行：
+从仓库根目录执行。`third_party/RoboTwin` 已直接纳入仓库；首次使用时按
+[SOP-00](SOP-00-environment-installation.md) 安装并验收 `emix-twin`：
 
 ```bash
-# Environment: 任一环境（Git 不依赖 emix/emix-twin）
-git submodule update --init --recursive third_party/RoboTwin
+# Environment: 任一 shell；脚本自行创建或复用 emix-twin
+bash dependencies/_install_twin.sh
+bash dependencies/_install_twin.sh --check
 ```
 
-| 命令或参数 | 类型 | 传入值 | 作用 |
-|------------|------|--------|------|
-| `git submodule update` | Git 子命令 | - | 更新子模块工作树 |
-| `--init` | CLI flag | - | 初始化尚未初始化的子模块 |
-| `--recursive` | CLI flag | - | 初始化嵌套子模块 |
-| `third_party/RoboTwin` | 位置参数 | 子模块路径 | 只操作 RoboTwin 子模块 |
+`_install_twin.sh --check` 会运行 SAPIEN 图形探针，并检查仿真依赖；
+`SAPIEN_RENDER=PASS` 只确认基础图形链路，不代表任务资产已齐全。
 
 采集前激活 RoboTwin 环境：
 

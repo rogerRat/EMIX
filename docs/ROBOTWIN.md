@@ -1,37 +1,26 @@
 # RoboTwin first-round protocol
 
-The active benchmark is RoboTwin. Initialize its fixed Fork source with:
+The active benchmark is RoboTwin. Its fixed source is tracked directly under
+`third_party/RoboTwin`; it is not a Git submodule. Use `emix` for conversion,
+EMIX indexing and training, and `emix-twin` for the simulator. From the project
+root, install each environment with its own entry point:
 
 ```bash
-git submodule update --init --recursive third_party/RoboTwin
+bash dependencies/_install.sh
+bash dependencies/_install_twin.sh
+bash dependencies/_install_twin.sh --check
 ```
 
-Use `emix` only for conversion, EMIX index construction, and training. Create
-`emix-twin` with `scripts/create_emix_twin_env.sh`, then use it only for
-RoboTwin assets, collection, and online evaluation. RoboTwin modifies installed
-SAPIEN and MPLib files during its official setup, so it must not share `emix`.
-
-The RTX 5060 uses the separate `emix-twin-5060` environment. SAPIEN 3.0.0b1
-bundles OIDN 2.0.1, whose CUDA backend does not recognize Blackwell
-`sm_120`. Do not change the renderer to `none`: that makes both GPUs emit
-raw ray-tracing noise. Instead, activate the target environment and run
-`bash scripts/install_robotwin_oidn.sh` with CUDA 12.8 available. The script
-builds the pinned OIDN 2.4.1 tag with `OIDN_DEVICE_CPU=OFF`, `OIDN_DEVICE_CUDA=ON`,
-`OIDN_FILTER_RT=ON`, and architecture `120`, then installs a Conda activation
-hook for the CUDA/C++ runtime and copies the versioned libraries into
-SAPIEN's private `oidn_library` directory. Run
-`bash scripts/verify_robotwin_render.sh`
-before collection or evaluation. It fails if CUDA is unavailable or a CPU OIDN
-plugin is present. `configs/scripts/run.yaml` routes GPU 1 collection and
-evaluation to this environment; keep `/usr/local/cuda` out of its runtime path.
-For the RTX 4070, use the same script in its own RoboTwin environment with
-`OIDN_ARCHITECTURES=89`; both environments remain GPU-only and use OIDN.
-
-For a fresh machine, first run `third_party/RoboTwin/script/_install.sh` in the
-dedicated environment, then run the two root scripts above. The source tag,
-GPU-only CMake options, CUDA architecture, and smoke-test policy are kept in
-the repository; the generated build tree remains outside Git. Existing Conda
-environments are reused and never deleted by these scripts.
+On a headless server with NVIDIA graphics exposed, the twin installer first
+repairs and verifies Vulkan/EGL and SAPIEN through `dependencies/_instal_sapien.sh`.
+It then installs the CUDA runtime and Curobo. On Blackwell GPUs it builds OIDN
+2.4.1 for the visible GPU architecture because SAPIEN's bundled OIDN 2.0.1
+does not support `sm_120`. Keep `/usr/local/cuda` out of a Blackwell runtime's
+library path when it contains an older CUDA build. The installer reuses
+existing Conda environments; simulator assets and policy checkpoints are
+separate. See [SOP-00](sop/SOP-00-environment-installation.md) for installation
+and [the measured repair log](20261019_emix_sapien_runtime_repair.md) for the
+RTX 5090 Vulkan/SAPIEN acceptance result.
 
 The first experiment is `click_bell_left`: a dual-Piper scene where the left
 Piper is the sole task actor and the right Piper stays at its home qpos. The

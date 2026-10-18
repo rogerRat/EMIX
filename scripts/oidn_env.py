@@ -1,21 +1,9 @@
 #!/usr/bin/env python3
-"""Shared GPU-architecture-aware runtime selection for the flow scripts.
+"""Select the single emix-twin runtime and apply Blackwell CUDA path fixes.
 
-SAPIEN's bundled OIDN CUDA plugin is not built for Blackwell (sm_120), so on
-the RTX 5060 the shared ``emix-twin`` environment fails denoiser init with
-"OIDN Error: unsupported device type: CUDA". The ``emix-twin-5060`` variant
-ships an OIDN rebuilt for sm_120 (scripts/install_robotwin_oidn.sh) plus the
-CUDA 12.8 toolchain curobo needs. Blackwell cards additionally require the
-stale /usr/local/cuda cuBLASLt to be stripped from LD_LIBRARY_PATH or every
-GEMM dies with CUBLAS_STATUS_NOT_INITIALIZED.
-
-This module is the single place deciding which runtime a GPU gets.
-``scripts/assets.py`` (direct interpreter invocation) and ``scripts/run.py``
-(``conda run``) both ask it here instead of hardcoding GPU indices: CUDA
-enumeration order is unrelated to nvidia-smi order and changes with the
-installed cards. Detection asks torch for the compute capability of the exact
-device a stage will see, then routes Blackwell (>= sm_100) GPUs to the 5060
-variant.
+The twin installer builds OIDN for visible Blackwell GPUs in ``emix-twin``.
+GPU capability detection remains useful to strip an older /usr/local/cuda
+cuBLASLt from the runtime path. CUDA enumeration can differ from nvidia-smi.
 """
 
 from __future__ import annotations
@@ -25,14 +13,24 @@ from pathlib import Path
 import subprocess
 
 
-CONDA_ENVS = Path("/home/rogerspyke/miniforge3/envs")
-# Shared RoboTwin runtime; its SAPIEN OIDN CUDA plugin lacks sm_120.
+def _conda_envs_path() -> Path:
+    override = os.environ.get("EMIX_CONDA_ENVS")
+    if override:
+        return Path(override).expanduser()
+    candidates = [
+        Path.home() / "miniconda3" / "envs",
+        Path.home() / "miniforge3" / "envs",
+        Path.home() / "anaconda3" / "envs",
+        Path("/opt/conda/envs"),
+        Path("/home/rogerspyke/miniforge3/envs"),
+    ]
+    return next((p for p in candidates if (p / "emix-twin/bin/python").is_file()), candidates[0])
+
+
+CONDA_ENVS = _conda_envs_path()
 EMIX_TWIN_PYTHON = CONDA_ENVS / "emix-twin" / "bin" / "python"
-# Blackwell variant: SAPIEN OIDN plugin rebuilt for sm_120, CUDA 12.8 toolchain.
-EMIX_TWIN_5060_PYTHON = CONDA_ENVS / "emix-twin-5060" / "bin" / "python"
-EMIX_TWIN_5060_NAME = "emix-twin-5060"
 # First Blackwell compute capability (datacenter parts are 10.0, GeForce 50 is
-# 12.0); anything at or above it needs the 5060 runtime and the cuBLASLt strip.
+# 12.0); anything at or above it needs the stale-cuBLASLt path fix.
 BLACKWELL_CAPABILITY = (10, 0)
 # /usr/local/cuda -> cuda-12.1 ships a stale libcublasLt.so.12.1 that shadows
 # torch's bundled 12.8 via LD_LIBRARY_PATH on Blackwell cards.
@@ -73,7 +71,7 @@ def gpu_compute_capability(gpu: str) -> tuple[int, int]:
 
 
 def is_blackwell(gpu: str) -> bool:
-    """Whether one CUDA device needs the Blackwell (emix-twin-5060) runtime.
+    """Whether one CUDA device needs the Blackwell CUDA library path fix.
 
     An empty device index (CPU-only stage) is never Blackwell.
     """
@@ -84,12 +82,12 @@ def is_blackwell(gpu: str) -> bool:
 
 def twin_python(gpu: str) -> Path:
     """Interpreter for driving the RoboTwin runtime directly on one GPU."""
-    return EMIX_TWIN_5060_PYTHON if is_blackwell(gpu) else EMIX_TWIN_PYTHON
+    return EMIX_TWIN_PYTHON
 
 
 def twin_environment_name(gpu: str) -> str:
     """Conda environment name for the RoboTwin runtime on one GPU."""
-    return EMIX_TWIN_5060_NAME if is_blackwell(gpu) else "emix-twin"
+    return "emix-twin"
 
 
 def strip_stale_cuda(env: dict[str, str]) -> None:
@@ -112,7 +110,7 @@ def strip_stale_cuda(env: dict[str, str]) -> None:
 def stage_environment(gpu: str) -> dict[str, str]:
     """Full environment for one RoboTwin stage on one GPU.
 
-    On Blackwell cards this also mirrors the emix-twin-5060 activate.d hook
+    On Blackwell cards this also mirrors the emix-twin activate.d hook
     that direct interpreter invocation (scripts/assets.py never activates the
     environment) would otherwise miss: the system libstdc++ lacks
     CXXABI_1.3.15 for curobo's compiled kinematics, and curobo's JIT loader
@@ -124,7 +122,7 @@ def stage_environment(gpu: str) -> dict[str, str]:
     env["CUDA_VISIBLE_DEVICES"] = gpu
     if is_blackwell(gpu):
         strip_stale_cuda(env)
-        prefix = str(EMIX_TWIN_5060_PYTHON.parent.parent)
+        prefix = str(EMIX_TWIN_PYTHON.parent.parent)
         env["PATH"] = f"{prefix}/bin:{env.get('PATH', '')}"
         env["CUDA_HOME"] = env.get("CUDA_HOME", prefix)
         env["LD_LIBRARY_PATH"] = (
@@ -143,7 +141,7 @@ def main() -> None:
     import argparse
 
     parser = argparse.ArgumentParser(description="Show per-GPU runtime routing.")
-    parser.add_argument("gpus", nargs="*", default=["0", "1"], help="CUDA device indices to probe")
+    parser.add_argument("gpus", nargs="*", default=["0"], help="CUDA device indices to probe")
     devices = parser.parse_args().gpus
     for gpu in devices:
         capability = gpu_compute_capability(gpu)
