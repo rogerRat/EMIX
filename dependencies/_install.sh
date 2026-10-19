@@ -87,11 +87,16 @@ echo "============================================================"
 # requirements.txt is a historical pip freeze. Filter packages whose pinned
 # versions conflict with the selected cu128 Torch or LeRobot 0.4.4 runtime.
 # The temporary file lives outside the repository and is removed on exit.
-grep -v -E "^(torch|torchaudio|torchvision|lerobot|modelscope-hub|gymnasium|opencv-python|opencv-python-headless|triton)==" \
+grep -v -E "^(torch|torchaudio|torchvision|lerobot|modelscope-hub|gymnasium|opencv-python|opencv-python-headless|triton|numpy|packaging)==" \
     "${REQUIREMENTS_FILE}" \
   | grep -v -E "^nvidia-[[:alnum:]-]+==" \
   | grep -v -E "^(cuda-toolkit|annotated-doc)\b" \
   > "${FILTERED_REQUIREMENTS}"
+printf '%s\n' \
+    'numpy==2.2.6' \
+    'opencv-python==4.12.0.88' \
+    'opencv-python-headless==4.12.0.88' \
+    'packaging==25.0' >> "${FILTERED_REQUIREMENTS}"
 
 echo "Filtered $(wc -l < "${FILTERED_REQUIREMENTS}") historical requirements; CUDA wheel pins are managed by the cu128 Torch index."
 
@@ -99,13 +104,15 @@ python -m pip install -r "${FILTERED_REQUIREMENTS}"
 
 echo ""
 echo "============================================================"
-echo "[Step 5/6] Applying headless NumPy/OpenCV compatibility pins"
+echo "[Step 5/6] Confirming NumPy/OpenCV and LeRobot compatibility pins"
 echo "============================================================"
 
-# LeRobot requires opencv-python-headless>=4.9,<4.13 and gymnasium>=1.1.1.
-# A newer OpenCV wheel can pull NumPy 2, while this project uses NumPy 1.26.
-python -m pip install "setuptools<81" "numpy==1.26.4" \
-    "opencv-python-headless==4.10.0.84"
+# LeRobot pulls rerun-sdk>=0.24, which requires NumPy 2, and requires
+# packaging<26. SAPIEN requires opencv-python while LeRobot uses the headless
+# wheel; keep both wheels on the same NumPy-2-compatible release.
+python -m pip install "setuptools<81" "numpy==2.2.6" \
+    "opencv-python==4.12.0.88" "opencv-python-headless==4.12.0.88" \
+    "packaging==25.0"
 
 echo ""
 echo "============================================================"

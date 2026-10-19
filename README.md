@@ -61,7 +61,8 @@
 在 Ubuntu 22.04 + RTX 5090 上，缺少系统 `libEGL.so.1` 曾使 Vulkan 无法
 创建实例；安装 EGL/GLVND 包后，物理步进和 GPU 相机渲染均通过。
 安装脚本与三个依赖清单集中在根目录 `dependencies/`；默认批次配置只使用
-CUDA 设备 0。仿真安装会按可见 GPU 的计算能力自动决定是否构建 Blackwell OIDN。
+CUDA 设备 0。仿真安装会按可见 GPU 的计算能力自动决定是否构建 Blackwell OIDN，
+并在 `--check` 中显式运行 OIDN 去噪相机探针。
 
 从仓库根目录选择所需入口：
 

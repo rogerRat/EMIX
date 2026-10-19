@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Fast preflight and minimal headless SAPIEN rendering probe."""
 
+import argparse
 import ctypes.util
 import os
 from pathlib import Path
@@ -77,7 +78,7 @@ def check_graphics() -> bool:
     return False
 
 
-def test_sapien_render() -> int:
+def test_sapien_render(denoiser: str | None = None) -> int:
     probe = r'''import os
 from pathlib import Path
 
@@ -90,6 +91,9 @@ import sapien
 
 # Exercise the ray-tracing path used by RoboTwin without loading tasks or assets.
 sapien.render.set_camera_shader_dir("rt")
+denoiser = os.environ.get("EMIX_SAPIEN_DENOISER")
+if denoiser:
+    sapien.render.set_ray_tracing_denoiser(denoiser)
 sapien.render.set_ray_tracing_samples_per_pixel(1)
 sapien.render.set_ray_tracing_path_depth(1)
 engine = sapien.Engine()
@@ -100,7 +104,8 @@ camera = scene.add_camera("probe", 16, 16, 0.1, 10.0, 1.0)
 scene.update_render()
 camera.take_picture()
 image = camera.get_picture("Color")
-print("SAPIEN_RENDER=PASS", sapien.__version__, tuple(image.shape))
+print("SAPIEN_RENDER=PASS", sapien.__version__, tuple(image.shape),
+      f"denoiser={denoiser or 'default'}")
 '''
     start = time.monotonic()
     try:
@@ -109,6 +114,7 @@ print("SAPIEN_RENDER=PASS", sapien.__version__, tuple(image.shape))
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            env=dict(os.environ, EMIX_SAPIEN_DENOISER=denoiser or ""),
             timeout=60,
             check=False,
         )
@@ -120,12 +126,17 @@ print("SAPIEN_RENDER=PASS", sapien.__version__, tuple(image.shape))
         print(output, flush=True)
     if result.returncode != 0:
         return fail("SAPIEN render", f"exit={result.returncode}", 3)
+    if denoiser == "oidn" and "OIDN Error" in output:
+        return fail("SAPIEN OIDN render", "OIDN reported an error", 3)
     if "SAPIEN_RENDER=PASS" not in output:
         return fail("SAPIEN render", "no rendered camera frame was returned", 3)
     return 0
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--denoiser", choices=("oidn", "optix", "none"))
+    args = parser.parse_args()
     started = time.monotonic()
     print("[1/3] Checking GPU", flush=True)
     if not check_gpu():
@@ -134,7 +145,7 @@ def main() -> int:
     if not check_graphics():
         return 2
     print("[3/3] Testing SAPIEN ray-tracing render", flush=True)
-    code = test_sapien_render()
+    code = test_sapien_render(args.denoiser)
     print(f"Elapsed: {time.monotonic() - started:.1f}s", flush=True)
     return code
 

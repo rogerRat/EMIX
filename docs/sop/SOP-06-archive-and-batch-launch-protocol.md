@@ -18,7 +18,7 @@
 | `--episodes` | 每任务 accepted episode 数 | `200` / `500` |
 | 任务集合 | 默认 10 个 ACTIVE_FAMILIES | 增减任何任务必须明示并获确认 |
 | `--image-width/height` | 训练分辨率 | 默认 `84 84` |
-| `--gpus` | 采集/评测双卡 | 默认 `0 1`（per-GPU env 路由自动，见 1.2） |
+| `--gpus` | 采集/评测使用的 CUDA 设备 | 默认 `0`；多卡时显式列出设备编号 |
 
 ### 1.2 隐性参数（沿用默认，但每次启动必须把数值报给用户）
 
@@ -44,7 +44,7 @@
 2. run yaml：`configs/scripts/run_<variant>[_<ep>ep].yaml`。新批次从最近的
    同类 yaml 用 sed 替换任务名/episodes 生成；**该目录按 .gitignore 约定
    不入库**，不要 `git add -f`。
-3. 工作区干净（未提交改动先按语义批次提交，见 1.5）、两卡空闲
+3. 工作区干净（未提交改动先按语义批次提交，见 1.5）、所选 GPU 空闲
    （`nvidia-smi`）、live `data/` 与 `outputs/{eval,train,intersections}`
    无同名残留（归档后应为空）。
 
@@ -55,14 +55,14 @@
 - 命令模板：
 
   ```bash
-  python scripts/assets.py --variant <V> --gpus 0 1 --episodes <N> \
+  python scripts/assets.py --variant <V> --gpus 0 --episodes <N> \
     --image-width 84 --image-height 84 \
   && python scripts/run.py --config configs/scripts/run_<V>[_<N>ep].yaml
   ```
 
-- **run ID** = flow 自动生成的 `logs/flow-<YYYYMMDD>-HHMMSS-cuda-0-1/` 目录名，
+- **run ID** = flow 自动生成的 `logs/flow-<YYYYMMDD>-HHMMSS-cuda-0/` 目录名，
   在启动说明里报给用户并记录
-- 启动后验证：两卡各一个仿真进程（`nvidia-smi --query-compute-apps`）；
+- 启动后验证：每个所选 GPU 至多一个仿真进程（`nvidia-smi --query-compute-apps`）；
   `[assets] gpu=X claimed task=...` 行出现；开头 `simulate data episode N
   fail!` 是专家失败换 seed 重试，属正常两阶段采集，**不要**当成故障干预
 - 必须记录到两处：`docs/prog/prog.md`（带日期小节）与代理记忆。内容：

@@ -10,6 +10,14 @@ huggingface-hub==0.35.3
 -r requirements-sapien.txt
 toppra==0.6.7
 warp-lang==1.12.0
+# Curobo v0.7.8 is built with --no-deps so it cannot replace CUDA PyTorch;
+# install its remaining runtime/build requirements explicitly here.
+importlib-resources==7.1.0
+numpy-quaternion==2024.0.13
+pybind11==3.1.0
+scikit-image==0.24.0
+setuptools-scm==10.3.4
+yourdfpy==0.0.60
 transforms3d==0.4.2
 scipy==1.10.1
 mplib==0.2.1

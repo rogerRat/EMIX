@@ -11,7 +11,13 @@ TORCH_VERSION="2.7.1+cu128"
 TORCHVISION_VERSION="0.22.1+cu128"
 CUDA_NVCC_VERSION=12.8.93
 CUROBO_VERSION=v0.7.8
+CUROBO_SHA256=702415790acf030aaf48c49f3381b8963d24b80bc4ab40d4a10808244ad5ee19
 OIDN_VERSION=v2.4.1
+OIDN_SHA256=bab9197187a8754cdc0293475a00b7be6a0e967a0da73d6cc86697969cfb0a7e
+OIDN_WEIGHTS_COMMIT=28883d1769d5930e13cf7f1676dd852bd81ed9e7
+OIDN_WEIGHTS_SHA256=b16dcb836331682219dfb1b57a84ae7a8b622f19d64249ad3fa3ec421626a604
+OIDN_CUTLASS_COMMIT=d55f6beeebb6df501a250dc82827db97660f06e0
+OIDN_CUTLASS_SHA256=44add0763c3ef6af0f760a487ec5a8c11db87624b213a124b6278a20ddfc02da
 CHECK_ONLY=0
 OIDN_MODE=auto
 
@@ -85,8 +91,20 @@ if any(torch.cuda.get_device_capability(i)[0] >= 10
     oidn = Path(sapien.__file__).parent / 'oidn_library'
     assert (oidn / 'libOpenImageDenoise_device_cuda.so.2.4.1').is_file(), (
         'Blackwell CUDA OIDN is missing; rerun _install_twin.sh')
+    for name in ('libOpenImageDenoise.so', 'libOpenImageDenoise_core.so',
+                 'libOpenImageDenoise_device_cuda.so'):
+        assert (oidn / f'{name}.2.0.1').resolve() == oidn / f'{name}.2.4.1', (
+            'SAPIEN still preloads its old OIDN library; rerun _install_twin.sh')
 print('[emix-twin] CHECK PASS:', torch.__version__, MotionGen.__name__)
 PY
+    if "$PYTHON_BIN" - <<'PY'
+import torch
+raise SystemExit(not any(torch.cuda.get_device_capability(i)[0] >= 10
+                         for i in range(torch.cuda.device_count())))
+PY
+    then
+        "$PYTHON_BIN" "$ROOT_DIR/dependencies/if_visual.py" --denoiser oidn
+    fi
     exit 0
 fi
 
@@ -113,16 +131,47 @@ PY
 export TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-$gpu_arches}"
 echo "[emix-twin] CUDA architectures: $TORCH_CUDA_ARCH_LIST"
 
-if [[ ! -d "$CUROBO_DIR/.git" ]]; then
-    if [[ -e "$CUROBO_DIR" ]]; then
-        echo "[emix-twin] Non-Git Curobo directory exists: $CUROBO_DIR" >&2
+if [[ -d "$CUROBO_DIR/.git" ]]; then
+    if [[ "$(git -C "$CUROBO_DIR" describe --tags --exact-match 2>/dev/null || true)" != "$CUROBO_VERSION" ]]; then
+        echo "[emix-twin] Existing Curobo checkout must be $CUROBO_VERSION" >&2
         exit 1
     fi
-    git clone --branch "$CUROBO_VERSION" --depth 1 \
-        https://github.com/NVlabs/curobo.git "$CUROBO_DIR"
+elif [[ -f "$CUROBO_DIR/.emix-source-version" ]]; then
+    if [[ "$(cat "$CUROBO_DIR/.emix-source-version")" != "$CUROBO_VERSION" ]]; then
+        echo "[emix-twin] Existing Curobo source must be $CUROBO_VERSION" >&2
+        exit 1
+    fi
+elif [[ -e "$CUROBO_DIR" ]]; then
+    echo "[emix-twin] Unrecognized Curobo directory exists: $CUROBO_DIR" >&2
+    exit 1
+else
+    # codeload serves the same tagged source without Git's long HTTPS pack
+    # transfer, which is unreliable on some container networks.
+    curobo_archive="${TMPDIR:-/tmp}/emix-curobo-${CUROBO_VERSION}.tar.gz"
+    if [[ ! -f "$curobo_archive" ]] || \
+       ! echo "$CUROBO_SHA256  $curobo_archive" | sha256sum --check --status; then
+        curl -fL --retry 3 --retry-delay 2 \
+            "https://codeload.github.com/NVlabs/curobo/tar.gz/refs/tags/$CUROBO_VERSION" \
+            -o "$curobo_archive"
+    fi
+    echo "$CUROBO_SHA256  $curobo_archive" | sha256sum --check
+    mkdir -p "$CUROBO_DIR"
+    tar -xzf "$curobo_archive" -C "$CUROBO_DIR" --strip-components=1
+    printf '%s\n' "$CUROBO_VERSION" > "$CUROBO_DIR/.emix-source-version"
 fi
-CUDA_HOME="$CONDA_PREFIX" MAX_JOBS="${MAX_JOBS:-2}" \
-    "$PYTHON_BIN" -m pip install --no-deps --no-build-isolation -e "$CUROBO_DIR"
+if [[ -f "$CUROBO_DIR/.emix-built-arches" ]] && \
+   [[ "$(cat "$CUROBO_DIR/.emix-built-arches")" == "$TORCH_CUDA_ARCH_LIST" ]] && \
+   "$PYTHON_BIN" - <<'PY'
+import torch
+from curobo.curobolib import geom_cu, kinematics_fused_cu, lbfgs_step_cu
+PY
+then
+    echo "[emix-twin] Reusing Curobo extensions for $TORCH_CUDA_ARCH_LIST"
+else
+    CUDA_HOME="$CONDA_PREFIX" MAX_JOBS="${MAX_JOBS:-2}" \
+        "$PYTHON_BIN" -m pip install --no-deps --no-build-isolation -e "$CUROBO_DIR"
+    printf '%s\n' "$TORCH_CUDA_ARCH_LIST" > "$CUROBO_DIR/.emix-built-arches"
+fi
 
 needs_oidn="$($PYTHON_BIN - <<'PY'
 import torch
@@ -141,14 +190,71 @@ if [[ "$OIDN_MODE" == force || ( "$OIDN_MODE" == auto && "$needs_oidn" == 1 ) ]]
             break
         fi
     done
-    if [[ ! -d "$oidn_source/.git" ]]; then
-        mkdir -p "$oidn_root"
-        git clone --recursive --branch "$OIDN_VERSION" --depth 1 \
-            https://github.com/RenderKit/oidn.git "$oidn_source"
-    fi
-    if [[ "$(git -C "$oidn_source" describe --tags --exact-match 2>/dev/null || true)" != "$OIDN_VERSION" ]]; then
-        echo "[emix-twin] OIDN checkout must be $OIDN_VERSION" >&2
+    if [[ -d "$oidn_source/.git" ]]; then
+        if [[ "$(git -C "$oidn_source" describe --tags --exact-match 2>/dev/null || true)" != "$OIDN_VERSION" ]]; then
+            echo "[emix-twin] OIDN checkout must be $OIDN_VERSION" >&2
+            exit 1
+        fi
+    elif [[ -f "$oidn_source/.emix-source-version" ]]; then
+        if [[ "$(cat "$oidn_source/.emix-source-version")" != "$OIDN_VERSION" ]]; then
+            echo "[emix-twin] OIDN source must be $OIDN_VERSION" >&2
+            exit 1
+        fi
+    elif [[ -e "$oidn_source" && ! -f "$oidn_source/.emix-source-incomplete" ]]; then
+        echo "[emix-twin] Unrecognized OIDN source directory: $oidn_source" >&2
         exit 1
+    else
+        # GitHub's Git pack endpoint can close long HTTPS transfers in this
+        # container. Fetch the exact tag and its CUDA build submodules from
+        # codeload, verifying each archive before extraction.
+        oidn_archive="${TMPDIR:-/tmp}/emix-oidn-${OIDN_VERSION}.tar.gz"
+        weights_archive="${TMPDIR:-/tmp}/emix-oidn-weights.tar.gz"
+        cutlass_archive="${TMPDIR:-/tmp}/emix-oidn-cutlass.tar.gz"
+        fetch_archive() {
+            local url="$1" archive="$2" digest="$3"
+            if [[ ! -f "$archive" ]] || \
+               ! echo "$digest  $archive" | sha256sum --check --status; then
+                curl -fL --retry 3 --retry-delay 2 "$url" -o "$archive"
+            fi
+            echo "$digest  $archive" | sha256sum --check
+        }
+        fetch_archive \
+            "https://codeload.github.com/RenderKit/oidn/tar.gz/refs/tags/$OIDN_VERSION" \
+            "$oidn_archive" "$OIDN_SHA256"
+        fetch_archive \
+            "https://codeload.github.com/RenderKit/oidn-weights/tar.gz/$OIDN_WEIGHTS_COMMIT" \
+            "$weights_archive" "$OIDN_WEIGHTS_SHA256"
+        fetch_archive \
+            "https://codeload.github.com/NVIDIA/cutlass/tar.gz/$OIDN_CUTLASS_COMMIT" \
+            "$cutlass_archive" "$OIDN_CUTLASS_SHA256"
+        mkdir -p "$oidn_source/weights" "$oidn_source/external/cutlass"
+        touch "$oidn_source/.emix-source-incomplete"
+        if [[ ! -f "$oidn_source/CMakeLists.txt" ]]; then
+            tar -xzf "$oidn_archive" -C "$oidn_source" --strip-components=1
+        fi
+        if [[ ! -f "$oidn_source/weights/rt_hdr.tza" ]]; then
+            tar -xzf "$weights_archive" -C "$oidn_source/weights" --strip-components=1
+        fi
+        if [[ ! -f "$oidn_source/external/cutlass/include/cutlass/cutlass.h" ]]; then
+            tar -xzf "$cutlass_archive" -C "$oidn_source/external/cutlass" --strip-components=1
+        fi
+        # The weights repository stores model blobs in Git LFS. Its codeload
+        # archive holds pointers, so fetch the pinned blobs and verify their
+        # SHA-256 object IDs before invoking CMake.
+        while IFS= read -r -d '' weight; do
+            if ! grep -q '^version https://git-lfs.github.com/spec/v1' "$weight"; then
+                continue
+            fi
+            weight_sha="$(awk '$1 == "oid" {sub(/^sha256:/, "", $2); print $2}' "$weight")"
+            relative_weight="${weight#"$oidn_source/weights/"}"
+            curl -fL --retry 3 --retry-delay 2 \
+                "https://media.githubusercontent.com/media/RenderKit/oidn-weights/$OIDN_WEIGHTS_COMMIT/$relative_weight" \
+                -o "$weight.download"
+            echo "$weight_sha  $weight.download" | sha256sum --check
+            mv -f "$weight.download" "$weight"
+        done < <(find "$oidn_source/weights" -type f -name '*.tza' -print0)
+        printf '%s\n' "$OIDN_VERSION" > "$oidn_source/.emix-source-version"
+        rm -f "$oidn_source/.emix-source-incomplete"
     fi
     cmake -S "$oidn_source" -B "$oidn_build" -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
@@ -172,6 +278,17 @@ PY
         libOpenImageDenoise_device_cuda.so.2.4.1; do
         test -f "$CONDA_PREFIX/lib/$name"
         cp -f "$CONDA_PREFIX/lib/$name" "$sapien_oidn_dir/"
+    done
+    # SAPIEN 3.0.0b1 explicitly preloads its private 2.0.1 filenames. Merely
+    # copying 2.4.1 next to them leaves the old CUDA plugin in use. Retain
+    # the original files for rollback and redirect those exact names.
+    for base in libOpenImageDenoise.so libOpenImageDenoise_core.so \
+        libOpenImageDenoise_device_cuda.so; do
+        old="$sapien_oidn_dir/$base.2.0.1"
+        if [[ -f "$old" && ! -L "$old" && ! -e "$old.bak_emix" ]]; then
+            cp -a "$old" "$old.bak_emix"
+        fi
+        ln -sfn "$base.2.4.1" "$old"
     done
     if compgen -G "$sapien_oidn_dir/libOpenImageDenoise_device_cpu.so*" >/dev/null; then
         echo "[emix-twin] CPU OIDN plugin remains in $sapien_oidn_dir" >&2
@@ -202,5 +319,8 @@ for i in range(torch.cuda.device_count()):
 PY
 # Re-run the render probe after replacing SAPIEN's private OIDN libraries.
 bash "$ROOT_DIR/dependencies/_instal_sapien.sh" --python "$PYTHON_BIN" --check
+if [[ "$OIDN_MODE" == force || ( "$OIDN_MODE" == auto && "$needs_oidn" == 1 ) ]]; then
+    "$PYTHON_BIN" "$ROOT_DIR/dependencies/if_visual.py" --denoiser oidn
+fi
 "$PYTHON_BIN" -m pip check
 echo "[emix-twin] Installation complete: $CONDA_PREFIX"

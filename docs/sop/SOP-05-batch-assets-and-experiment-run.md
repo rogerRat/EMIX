@@ -1,16 +1,16 @@
 # SOP-05：批量资产构建（assets.py）与实验流水线（run.py）
 
 环境安装以 [SOP-00](SOP-00-environment-installation.md) 为准。下文的
-4070/5060 双卡分工是旧实验主机的批次配置；当前默认 `gpu_batches` 和
-`assets.py --gpus` 均使用 CUDA 0，适用于单张 RTX 5090。当前安装入口将 Blackwell 所需 OIDN
-构建在同一个 `emix-twin` 环境中。
+当前默认 `gpu_batches` 和 `assets.py --gpus` 均使用 CUDA 0，适用于
+单张 RTX 5090。安装入口按实际计算能力构建 Blackwell 所需 OIDN，
+并统一使用 `emix-twin` 环境。
 
 本文档说明两个批量驱动脚本的当前用法：
 
 - [`scripts/assets.py`](../../scripts/assets.py)：GPU worker 从共享工作清单动态抢单、每卡任一时刻至多一个仿真器，批量构建
   RoboTwin 任务资产（采集、转换、索引、可视化），面向居中臂相机变体
   （`cen_arm_*`），默认小 episode 数（5）。
-- [`scripts/run.py`](../../scripts/run.py)：固定的双 GPU 左臂 DP/EMIX 实验
+- [`scripts/run.py`](../../scripts/run.py)：可按配置使用单张或多张 GPU 的左臂 DP/EMIX 实验
   矩阵，配置全部来自 [`configs/scripts/run.yaml`](../../configs/scripts/run.yaml)，
   覆盖 prepare -> index -> vis -> train-eval 四个全局阶段。
 
@@ -45,16 +45,15 @@ task config，不能混用。
 python scripts/assets.py
 ```
 
-默认对全部 10 个活跃 family、`cen_arm_right_wide_cam` 变体，GPU 0/1 两个
-worker 从一条共享工作清单抢单（静态 round-robin 分配已废弃：任务时长相差
-10 倍时会让某张卡空转），每个任务跑全部四个阶段、5 个 episode、224x224
+默认对全部 10 个活跃 family、`cen_arm_right_wide_cam` 变体，在 CUDA 0
+启动一个 worker；指定多张卡时，worker 从一条共享工作清单抢单。每个任务跑全部四个阶段、5 个 episode、224x224
 图像。
 
 只重建某个 family 的可视化与索引：
 
 ```bash
 python scripts/assets.py --variant cen_arm_right_wide_cam \
-  --gpus 0 1 \
+  --gpus 0 \
   --episodes 200 \
   --image-width 84 \
   --image-height 84
@@ -66,7 +65,7 @@ python scripts/assets.py --variant cen_arm_right_wide_cam \
 |------|------|--------|------|
 | `--tasks` | 可选，多值 | 全部 `ACTIVE_FAMILIES` | 任务 family 基名列表（不带变体后缀） |
 | `--variant` | 可选枚举 | `cen_arm_right_wide_cam` | 相机变体，决定任务名后缀 |
-| `--gpus` | 可选，多值 | `0 1` | 参与的 CUDA 设备号（CUDA 编号，非 nvidia-smi 编号） |
+| `--gpus` | 可选，多值 | `0` | 参与的 CUDA 设备号 |
 | `--episodes` | 可选整数 | `5` | 每个任务的 episode 数，必须为正 |
 | `--stages` | 可选，多值 | `collect convert index vis` | 要执行的阶段子集 |
 | `--image-width` | 可选整数 | `224` | 转换输出图像宽 |
@@ -124,17 +123,12 @@ python -m embodied_mixup.visualization.first_frame_average \
 
 ### 2.4 GPU 路由与环境
 
-本机 CUDA 设备编号与 nvidia-smi 相反：CUDA 0 是 RTX 4070，CUDA 1 是
-RTX 5060。`--gpus` 使用 CUDA 编号。
-
-| GPU | 物理 卡 | 采集环境 | 说明 |
-|-----|---------|----------|------|
-| `0` | RTX 4070 | `emix-twin` | 直接调用 |
-| `1` | RTX 5060 (sm_120) | `emix-twin` | Blackwell 库路径处理（见下） |
+`--gpus` 使用 CUDA 编号；当前单卡服务器只需 `--gpus 0`。
+采集环境统一为 `emix-twin`。
 
 环境选择**不按 GPU 序号硬编码**，而是由 [`scripts/oidn_env.py`](../../scripts/oidn_env.py)
 在运行时用 torch 探测每张卡的 compute capability（可用
-`python scripts/oidn_env.py 0 1` 单独查看）。Blackwell 卡（>= sm_100）的
+`python scripts/oidn_env.py 0` 单独查看）。Blackwell 卡（>= sm_100）的
 OIDN 由 `_install_twin.sh` 在 `emix-twin` 内构建；Curobo 编译运动学需要该
 环境的新 libstdc++ 和 ninja，所以运行时会在子进程环境里剥离
 `LD_LIBRARY_PATH` 中的 `/usr/local/cuda` 条目（旧 cuBLASLt 会炸 GEMM），并补上
@@ -188,7 +182,7 @@ python scripts/run.py --cuda 0
 | 参数 | 类型 | 默认值 | 作用 |
 |------|------|--------|------|
 | `--phase` | 可选枚举 | 无（跑全部） | `prepare` / `index` / `vis` / `train-eval` 四选一 |
-| `--cuda` | 可选，多值 | `run.yaml` 的 `gpu_batches` 设备 | 覆盖设备列表（必须是 `gpu_batches` 中出现的设备的子集），如 `--cuda 0 1` |
+| `--cuda` | 可选，多值 | `run.yaml` 的 `gpu_batches` 设备 | 覆盖设备列表（必须是 `gpu_batches` 中出现的设备的子集），如 `--cuda 0` |
 
 ### 3.3 阶段顺序与调度
 
@@ -204,12 +198,12 @@ python scripts/run.py --cuda 0
 
 ### 3.4 环境矩阵
 
-| 阶段（`environments` 键） | GPU 0 (4070) | GPU 1 (5060) |
-|---------------------------|--------------|--------------|
-| `robotwin`（采集、GPU 探针） | `emix-twin` | `emix-twin` |
-| `preprocessing`（转换、索引、vis） | `emix` | `emix` |
-| `training`（训练） | `emix` | `emix` |
-| `evaluation`（在线评估） | `emix-twin` | `emix-twin` |
+| 阶段（`environments` 键） | 环境 |
+|---------------------------|------|
+| `robotwin`（采集、GPU 探针） | `emix-twin` |
+| `preprocessing`（转换、索引、vis） | `emix` |
+| `training`（训练） | `emix` |
+| `evaluation`（在线评估） | `emix-twin` |
 
 `robotwin`/`evaluation` 两个键统一使用 `emix-twin`；Blackwell 卡仍剥离
 子进程 `LD_LIBRARY_PATH` 中的
