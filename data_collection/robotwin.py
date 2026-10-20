@@ -153,6 +153,7 @@ def collect(
     cuda_visible_devices: str | None = None,
     output_root: Path | None = None,
     dry_run: bool = False,
+    instance_annotations: bool = False,
 ) -> Path:
     """Run RoboTwin collection and return the moved collection directory."""
     if task not in ALLOWED_TASKS:
@@ -195,6 +196,8 @@ def collect(
     env = os.environ.copy()
     if cuda_visible_devices is not None:
         env["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
+    if instance_annotations:
+        env["EMIX_INSTANCE_ANNOTATIONS"] = "1"
     print(f"[RoboTwin] {' '.join(command)}")
     print(f"[RoboTwin] cwd: {benchmark_root}")
     print(f"[RoboTwin] output: {destination}")
@@ -224,6 +227,7 @@ def collect(
         (destination / "collection_metrics.json").write_text(
             json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
+    (destination / ".complete").write_text("ok\n", encoding="ascii")
     return destination
 
 
@@ -246,6 +250,7 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="Collection root (default: <project>/data/robotwin)",
     )
+    parser.add_argument("--instance-annotations", action="store_true", help="Capture lossless raw actor IDs and object tables for patch training.")
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -261,6 +266,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             cuda_visible_devices=args.cuda,
             output_root=args.output_root,
             dry_run=args.dry_run,
+            instance_annotations=args.instance_annotations,
         )
     except (FileExistsError, FileNotFoundError, ValueError) as error:
         print(f"[RoboTwin] error: {error}", file=sys.stderr)

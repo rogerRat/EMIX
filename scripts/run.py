@@ -233,18 +233,25 @@ def task_priority(task: str, config: dict[str, Any]) -> float:
     return average_frames_per_episode(dataset)
 
 
-def completed_collection(collection: Path, episodes: int) -> bool:
+def completed_collection(collection: Path, episodes: int, *, require_annotations: bool = False) -> bool:
     """Return whether a native RoboTwin collection has every expected episode."""
     data_directory = collection / "data"
     if not data_directory.is_dir():
         return False
-    return all(
+    complete = all(
         (data_directory / f"episode{episode_index}.hdf5").is_file()
         for episode_index in range(episodes)
     )
+    if require_annotations:
+        objects_directory = collection / "instance_objects"
+        complete = complete and all(
+            (objects_directory / f"episode{episode_index}.json").is_file()
+            for episode_index in range(episodes)
+        )
+    return complete
 
 
-def completed_dataset(dataset: Path, episodes: int, width: int, height: int) -> bool:
+def completed_dataset(dataset: Path, episodes: int, width: int, height: int, *, require_annotations: bool = False) -> bool:
     """Return whether a converted LeRobot dataset matches the flow contract."""
     info_path = dataset / "meta" / "info.json"
     if not info_path.is_file():
@@ -257,12 +264,16 @@ def completed_dataset(dataset: Path, episodes: int, width: int, height: int) -> 
     if not isinstance(info, dict):
         return False
     camera = (info.get("features") or {}).get("observation.images.head_camera") or {}
-    return (
+    complete = (
         info.get("total_episodes") == episodes
         and camera.get("shape") == [height, width, 3]
         and any((dataset / "data").glob("**/*.parquet"))
         and any((dataset / "videos").glob("**/*.mp4"))
     )
+    if require_annotations:
+        annotation_files = list((dataset / "annotations").glob("episode_*.instances.h5"))
+        complete = complete and len(annotation_files) == episodes
+    return complete
 
 
 def completed_index(index: Path) -> bool:
@@ -654,10 +665,10 @@ def worker_signal_handler(signum: int, _frame: Any) -> None:
     raise SystemExit(128 + signum)
 
 
-def train_config(task: str, config: dict[str, Any], *, emix: bool) -> dict[str, Any]:
+def train_config(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> dict[str, Any]:
     training = require_mapping(config, "training")
     _, dataset, index = task_paths(task, config)
-    kind = "emix" if emix else "baseline"
+    kind = "patch" if patch else ("emix" if emix else "baseline")
     payload: dict[str, Any] = {
         key: training[key] for key in ("batch_size", "num_workers", "steps", "save_freq", "log_freq")
     }
@@ -711,24 +722,27 @@ def train_config(task: str, config: dict[str, Any], *, emix: bool) -> dict[str, 
                 "alpha_mode": emix_cfg["alpha_mode"], "beta": emix_cfg["beta"],
                 "alpha_value": None, "loss_weight": emix_cfg["loss_weight"],
                 "visual_keys": emix_cfg["visual_keys"], "state_mode": emix_cfg["state_mode"],
+                "image_mode": "patch" if patch else "linear",
+                "annotation_root": str(dataset / "annotations") if patch else "",
             },
             "training": {"enabled": True, "seed": training["seed"], "training_mode": "mixed", "scheduler": copy.deepcopy(emix_cfg["scheduler"])},
         }
     return payload
 
 
-def eval_config(task: str, config: dict[str, Any], *, emix: bool) -> dict[str, Any]:
+def eval_config(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> dict[str, Any]:
     pipeline = require_mapping(config, "pipeline")
     training = require_mapping(config, "training")
     _, dataset, _ = task_paths(task, config)
-    kind = "emix" if emix else "baseline"
+    kind = "patch" if patch else ("emix" if emix else "baseline")
     payload = {
         "dataset": {"repo_id": task, "root": str(dataset)},
         "evaluation": {
             "checkpoint": str(configured_path(config, "train_root", f"{task}_dp_{kind}") / "checkpoints" / f"{int(training['steps']):06d}" / "pretrained_model"),
             "output_dir": str(configured_path(config, "eval_root", f"{task}_dp_{kind}")),
             "benchmark_root": str(configured_path(config, "robotwin_root")), "task_name": task, "task_config": task,
-            "piper_distance": pipeline["piper_distance"], "episodes": pipeline["evaluation_episodes"],
+            "piper_distance": pipeline["piper_distance"], "left_qpos_dim": pipeline["left_qpos_dim"],
+            "episodes": pipeline["evaluation_episodes"],
             "seed": pipeline["evaluation_seed"], "device": pipeline["evaluation_device"],
             "save_video": pipeline["save_evaluation_video"], "video_fps": pipeline["evaluation_video_fps"],
         },
@@ -748,8 +762,8 @@ def write_runtime_configs(task: str, config: dict[str, Any]) -> dict[str, Path]:
     root = configured_path(config, "runtime_config_root", task)
     root.mkdir(parents=True, exist_ok=True)
     paths: dict[str, Path] = {}
-    for kind, enabled in (("baseline", False), ("emix", True)):
-        for stage, payload in (("train", train_config(task, config, emix=enabled)), ("eval", eval_config(task, config, emix=enabled))):
+    for kind, enabled, patch in (("baseline", False, False), ("emix", True, False), ("patch", True, True)):
+        for stage, payload in (("train", train_config(task, config, emix=enabled, patch=patch)), ("eval", eval_config(task, config, emix=enabled, patch=patch))):
             path = root / f"{kind}_{stage}.yaml"
             with path.open("w", encoding="utf-8") as handle:
                 yaml.safe_dump(payload, handle, sort_keys=False)
@@ -769,11 +783,14 @@ def run_prepare_task(
     pipeline = require_mapping(config, "pipeline")
     collection, dataset, _ = task_paths(task, config)
     episodes = int(pipeline["episodes_per_task"])
-    collection_ready = completed_collection(collection, episodes)
+    collection_ready = completed_collection(
+        collection, episodes, require_annotations=bool(pipeline.get("instance_annotations", False))
+    )
     if collection.exists() and not collection_ready:
         remove_artifact(collection, "RoboTwin collection")
     dataset_ready = completed_dataset(
-        dataset, episodes, int(pipeline["image_width"]), int(pipeline["image_height"])
+        dataset, episodes, int(pipeline["image_width"]), int(pipeline["image_height"]),
+        require_annotations=bool(pipeline.get("instance_annotations", False)),
     )
     if dataset.exists() and not dataset_ready:
         remove_artifact(dataset, "LeRobot dataset")
@@ -783,9 +800,15 @@ def run_prepare_task(
     # dataset (e.g. restored from an archive) must not trigger a re-collection
     # just because the raw hdf5 collections are not on disk.
     if not dataset_ready and not collection_ready:
-        stages.append(("collect", conda_command(config, "robotwin", gpu, "python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu)))
+        collect_args = ["python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu]
+        if pipeline.get("instance_annotations", False):
+            collect_args.append("--instance-annotations")
+        stages.append(("collect", conda_command(config, "robotwin", gpu, *collect_args)))
     if not dataset_ready:
-        stages.append(("convert-84x84", conda_command(config, "preprocessing", gpu, "python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"]))))
+        convert_args = ["python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"])]
+        if pipeline.get("instance_annotations", False):
+            convert_args.append("--instance-annotations")
+        stages.append(("convert-84x84", conda_command(config, "preprocessing", gpu, *convert_args)))
     print(f"[flow] prepare / GPU {gpu}: task {task_index}/{task_total} started: {task}", flush=True)
     if collection_ready:
         message = f"[flow] prepare / GPU {gpu}: reusing complete collection: {collection}\n"
@@ -912,32 +935,32 @@ def run_vis_task(
     print(f"[flow] vis: task {task_index}/{task_total} completed: {task}", flush=True)
 
 
-def train_output_dir(task: str, config: dict[str, Any], *, emix: bool) -> Path:
+def train_output_dir(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> Path:
     """Training artifact root for one task/policy-kind pair."""
-    kind = "emix" if emix else "baseline"
+    kind = "patch" if patch else ("emix" if emix else "baseline")
     return configured_path(config, "train_root", f"{task}_dp_{kind}")
 
 
-def final_checkpoint_dir(task: str, config: dict[str, Any], *, emix: bool) -> Path:
+def final_checkpoint_dir(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> Path:
     """Directory holding the final pretrained model, as the eval config points at."""
     steps = int(require_mapping(config, "training")["steps"])
-    return train_output_dir(task, config, emix=emix) / "checkpoints" / f"{steps:06d}" / "pretrained_model"
+    return train_output_dir(task, config, emix=emix, patch=patch) / "checkpoints" / f"{steps:06d}" / "pretrained_model"
 
 
-def completed_training(task: str, config: dict[str, Any], *, emix: bool) -> bool:
+def completed_training(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> bool:
     """Return whether training produced its final checkpoint (simplest check)."""
-    return (final_checkpoint_dir(task, config, emix=emix) / "model.safetensors").is_file()
+    return (final_checkpoint_dir(task, config, emix=emix, patch=patch) / "model.safetensors").is_file()
 
 
-def eval_output_dir(task: str, config: dict[str, Any], *, emix: bool) -> Path:
+def eval_output_dir(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> Path:
     """Evaluation artifact root for one task/policy-kind pair."""
-    kind = "emix" if emix else "baseline"
+    kind = "patch" if patch else ("emix" if emix else "baseline")
     return configured_path(config, "eval_root", f"{task}_dp_{kind}")
 
 
-def completed_evaluation(task: str, config: dict[str, Any], *, emix: bool) -> bool:
+def completed_evaluation(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> bool:
     """Return whether evaluation wrote a metrics.json (simplest check)."""
-    return any(eval_output_dir(task, config, emix=emix).glob("*/metrics.json"))
+    return any(eval_output_dir(task, config, emix=emix, patch=patch).glob("*/metrics.json"))
 
 
 def selected_policies(config: dict[str, Any]) -> list[tuple[str, bool]]:
@@ -954,13 +977,13 @@ def selected_policies(config: dict[str, Any]) -> list[tuple[str, bool]]:
     pipeline = require_mapping(config, "pipeline")
     policies = pipeline.get("policies", ["baseline", "emix"])
     if not isinstance(policies, list) or not policies or any(
-        policy not in ("baseline", "emix") for policy in policies
+        policy not in ("baseline", "emix", "patch") for policy in policies
     ):
         raise ValueError(
-            "pipeline.policies must be a non-empty subset of ['baseline', 'emix'], "
+            "pipeline.policies must be a non-empty subset of ['baseline', 'emix', 'patch'], "
             f"got: {policies!r}"
         )
-    return [(kind, kind == "emix") for kind in ("baseline", "emix") if kind in policies]
+    return [(kind, kind in ("emix", "patch")) for kind in ("baseline", "emix", "patch") if kind in policies]
 
 
 def run_training_task(
@@ -983,12 +1006,13 @@ def run_training_task(
     print(f"[flow] train-eval / GPU {gpu}: task {task_index}/{task_total} started: {task}", flush=True)
     stages: list[tuple[str, list[str]]] = []
     for kind, emix in selected_policies(config):
-        if completed_training(task, config, emix=emix):
-            message = f"[flow] train-eval / GPU {gpu}: reusing completed {kind} training: {final_checkpoint_dir(task, config, emix=emix)}\n"
+        patch = kind == "patch"
+        if completed_training(task, config, emix=emix, patch=patch):
+            message = f"[flow] train-eval / GPU {gpu}: reusing completed {kind} training: {final_checkpoint_dir(task, config, emix=emix, patch=patch)}\n"
             log.write(message)
             print(message, end="", flush=True)
         else:
-            incomplete_train = train_output_dir(task, config, emix=emix)
+            incomplete_train = train_output_dir(task, config, emix=emix, patch=patch)
             if incomplete_train.exists():
                 remove_artifact(incomplete_train, f"incomplete {kind} training", log)
             stages.append(
@@ -1003,12 +1027,12 @@ def run_training_task(
             )
         # Evaluation output is only reusable while the checkpoint it evaluates
         # still exists; otherwise the metrics are stale and get re-run.
-        if completed_training(task, config, emix=emix) and completed_evaluation(task, config, emix=emix):
-            message = f"[flow] train-eval / GPU {gpu}: reusing completed {kind} evaluation: {eval_output_dir(task, config, emix=emix)}\n"
+        if completed_training(task, config, emix=emix, patch=patch) and completed_evaluation(task, config, emix=emix, patch=patch):
+            message = f"[flow] train-eval / GPU {gpu}: reusing completed {kind} evaluation: {eval_output_dir(task, config, emix=emix, patch=patch)}\n"
             log.write(message)
             print(message, end="", flush=True)
         else:
-            incomplete_eval = eval_output_dir(task, config, emix=emix)
+            incomplete_eval = eval_output_dir(task, config, emix=emix, patch=patch)
             if incomplete_eval.exists():
                 remove_artifact(incomplete_eval, f"incomplete {kind} evaluation", log)
             stages.append(
@@ -1061,7 +1085,7 @@ def write_results_summary(config: dict[str, Any], log_directory: Path | None = N
     table: dict[str, dict[str, tuple[float, int]]] = {}
     for task in config["tasks"]:
         for kind in policies:
-            runs = sorted(eval_output_dir(task, config, emix=kind == "emix").glob("*/metrics.json"))
+            runs = sorted(eval_output_dir(task, config, emix=kind in ("emix", "patch"), patch=kind == "patch").glob("*/metrics.json"))
             if not runs:
                 continue
             payload = json.loads(runs[-1].read_text(encoding="utf-8"))
@@ -1292,7 +1316,7 @@ def validate(config: dict[str, Any], cuda: list[str]) -> dict[str, list[str]]:
             )
         camera = collection_config.get("camera") or {}
         if camera.get("head_camera_type") != "D435-W" or not camera.get("collect_head_camera"):
-            raise ValueError(f"{task_config} must collect the central wide head camera")
+            raise ValueError(f"{task_config} must collect the configured head camera")
     # Priority: tasks with fewer average frames per episode run first in each
     # GPU queue, so short collection/training tasks finish early.
     return batches

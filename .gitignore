@@ -86,3 +86,4 @@ ms_token.txt
 !/tests/test_image_noise.py
 
 !/tests/test_instance_annotations.py
+!/tests/test_patch_training.py

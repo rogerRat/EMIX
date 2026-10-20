@@ -3,6 +3,7 @@
 import argparse
 import json
 import logging
+import time
 from pathlib import Path
 
 import cv2
@@ -14,6 +15,7 @@ from tqdm import tqdm
 
 from embodied_mixup.datasets import default_repo_id_from_dataset_root
 from fix_stats import fix_lerobot_image_stats
+from instance_annotations import InstanceAnnotations, transform_pair
 
 LOGGER = logging.getLogger(__name__)
 
@@ -108,7 +110,7 @@ def _resolve_instruction(path, instructions_root, instruction_type, instruction_
     )
 
 
-def _load_episode(path, image_width, image_height, left_qpos_dim):
+def _load_episode(path, image_width, image_height, left_qpos_dim, *, require_instance_annotations=False):
     """Load one native RoboTwin episode and align observations with actions.
 
     @input: path Path to episodeN.hdf5; image dimensions and left_qpos_dim positive integers.
@@ -121,23 +123,41 @@ def _load_episode(path, image_width, image_height, left_qpos_dim):
         if "endpose/left_endpose" not in handle:
             raise ValueError(f"{path} lacks endpose/left_endpose required for EMIX indexing.")
         left_eef = _pose_wxyz_to_rotvec(np.asarray(handle["endpose/left_endpose"][:], dtype=np.float32))
+        instance_ids = np.asarray(handle["observation/head_camera/instance_id"][:]) if "observation/head_camera/instance_id" in handle else None
     length = min(len(rgb), len(state), len(left_eef))
     if length < 2:
         raise ValueError(f"{path} has fewer than two aligned frames.")
+    if require_instance_annotations and (instance_ids is None or len(instance_ids) < length):
+        raise ValueError(f"{path} lacks frame-aligned observation/head_camera/instance_id data.")
+    raw_images = rgb[:length - 1].copy()
     rgb = np.asarray([_resize_rgb(frame, image_width, image_height) for frame in rgb[:length]])
     state = state[:length]
     left_eef = left_eef[:length]
+    if state.ndim != 2 or state.shape[1] != 2 * left_qpos_dim:
+        width = state.shape[1] if state.ndim == 2 else "invalid"
+        raise ValueError(
+            f"{path} has native qpos width {width}; expected {2 * left_qpos_dim}."
+        )
     home_right_qpos = state[0, left_qpos_dim:].copy()
+    right_deviation = float(np.max(np.abs(state[:, left_qpos_dim:] - home_right_qpos)))
+    if right_deviation > 1e-3:
+        raise ValueError(
+            f"{path} right arm changed by {right_deviation:.6g}, above the 1e-3 fixed-arm tolerance."
+        )
+    # The policy contract is single-arm: validate right qpos, then omit it from
+    # both observation.state and action.
+    state = state[:, :left_qpos_dim].copy()
     action = state[1:].copy()
-    action[:, left_qpos_dim:] = home_right_qpos
     return {
         "images": rgb[:-1],
+        "raw_images": raw_images,
         "state": state[:-1],
         "action": action,
         "left_eef": left_eef[:-1],
         # Keep the active gripper as a per-frame vector so it can be stored as
         # an explicit auxiliary feature in the LeRobot dataset.
         "left_gripper": state[:-1, left_qpos_dim - 1].astype(np.float32),
+        "instance_ids": None if instance_ids is None else instance_ids[:length - 1],
     }
 
 
@@ -182,10 +202,16 @@ def main(args):
     @output: None; creates a new LeRobot dataset and fixes its image statistics.
     @scenario: Bridge native RoboTwin collection output into current EMIX training inputs.
     """
+    started_at = time.perf_counter()
     source = Path(args.src).expanduser().resolve()
     episodes = sorted((source / "data").glob("episode*.hdf5"), key=lambda item: int(item.stem.removeprefix("episode")))
     if not episodes:
         raise ValueError(f"No episode*.hdf5 files found under {source / 'data'}.")
+    LOGGER.info(
+        "stage=convert-start episodes=%d image_size=%dx%d annotations=%s",
+        len(episodes), args.image_width, args.image_height,
+        bool(getattr(args, "instance_annotations", False)),
+    )
     root = Path(args.tgt).expanduser().resolve()
     if root.exists() and any(root.iterdir()):
         raise FileExistsError(f"Target dataset root is not empty: {root}")
@@ -214,11 +240,40 @@ def main(args):
             fallback_count,
             len(episodes),
         )
-    first = _load_episode(episodes[0], args.image_width, args.image_height, args.left_qpos_dim)
+    first = _load_episode(
+        episodes[0], args.image_width, args.image_height, args.left_qpos_dim,
+        require_instance_annotations=getattr(args, "instance_annotations", False),
+    )
     repo_id = args.repo_id or default_repo_id_from_dataset_root(root)
     dataset = _create_dataset(repo_id, str(root), args.fps, first)
-    for path in tqdm(episodes, desc="Converting RoboTwin episodes"):
-        episode = _load_episode(path, args.image_width, args.image_height, args.left_qpos_dim)
+    annotations_root = root / "annotations"
+    if getattr(args, "instance_annotations", False):
+        annotations_root.mkdir(parents=True, exist_ok=True)
+    for episode_index, path in enumerate(tqdm(episodes, desc="Converting RoboTwin episodes")):
+        episode = _load_episode(
+            path, args.image_width, args.image_height, args.left_qpos_dim,
+            require_instance_annotations=getattr(args, "instance_annotations", False),
+        )
+        if getattr(args, "instance_annotations", False):
+            object_path = source / "instance_objects" / f"{path.stem}.json"
+            if not object_path.is_file():
+                raise FileNotFoundError(f"Missing episode object table: {object_path}")
+            renderer_objects = {int(key): value for key, value in json.loads(object_path.read_text(encoding="utf-8")).items()}
+            frame_ids = np.arange(len(episode["instance_ids"]), dtype=np.int64)
+            annotation = InstanceAnnotations.from_renderer(
+                episode["instance_ids"], renderer_objects=renderer_objects,
+                dataset_id=repo_id, episode_id=str(episode_index), camera="head_camera",
+                frame_ids=frame_ids,
+            )
+            _, annotation = transform_pair(
+                episode["raw_images"], annotation,
+                stream_key=(repo_id, str(episode_index), "head_camera"),
+                frame_ids=frame_ids, indices=list(range(len(frame_ids))),
+                size=(args.image_width, args.image_height),
+            )
+            if "patch_target" not in annotation.objects:
+                raise ValueError(f"Episode {path.stem} object table has no patch_target role")
+            annotation.save(annotations_root / f"episode_{episode_index}.instances.h5")
         for index in range(len(episode["action"])):
             dataset.add_frame({
                 "observation.images.head_camera": episode["images"][index],
@@ -236,11 +291,16 @@ def main(args):
     dataset.meta._close_writer()
     dataset.stop_image_writer()
     fix_lerobot_image_stats(root=str(root), repo_id=repo_id)
-    LOGGER.info("Converted %d RoboTwin episodes to %s", len(episodes), root)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / ".complete").write_text("ok\n", encoding="ascii")
+    LOGGER.info(
+        "stage=convert-complete episodes=%d elapsed_s=%.1f output=%s",
+        len(episodes), time.perf_counter() - started_at, root,
+    )
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="[convert] [%(levelname)s] %(message)s")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s-[convert_to_lerobot]-[run]-[%(message)s]", datefmt="%Y-%m-%dT%H:%M:%S")
     parser = argparse.ArgumentParser(description="Convert RoboTwin HDF5 episodes to LeRobot format")
     parser.add_argument("--src", required=True, help="RoboTwin collection source directory.")
     parser.add_argument("--tgt", required=True, help="Target LeRobot dataset directory.")
@@ -281,4 +341,5 @@ if __name__ == "__main__":
     parser.add_argument("--image-height", type=int, default=84)
     parser.add_argument("--fps", type=int, default=17, help="Approximate 250 Hz / save_freq 15 source rate.")
     parser.add_argument("--left-qpos-dim", type=int, default=7, help="Left Piper arm-plus-gripper dimensions.")
+    parser.add_argument("--instance-annotations", action="store_true", help="Convert synchronized raw actor IDs into lossless annotation sidecars.")
     main(parser.parse_args())

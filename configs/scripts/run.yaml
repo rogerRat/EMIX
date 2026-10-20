@@ -1,14 +1,19 @@
 # End-to-end left-arm DP versus EMIX experiment matrix.  Run with:
 #   python scripts/run.py
 #
-# `hanging_mug_left_central_wide_cam` is intentionally excluded: its task
+# `hanging_mug_left_cen_arm_top_cam` is intentionally excluded: its task
 # registry marks it frozen/not collectable.  These are the ten active families.
 # Per-variant batch runbooks live alongside this file (e.g.
 # run_cen_arm_near_side_cam.yaml) and are launched with `run.py --config`.
 project:
   robotwin_root: third_party/RoboTwin
   runtime_config_root: configs/scripts/run/{task}
-  log_root: logs
+  collection_root: /root/autodl-tmp/sin-v0-patch/data/robotwin/{task}
+  dataset_root: /root/autodl-tmp/sin-v0-patch/data/lerobot/{task}
+  index_root: /root/autodl-tmp/sin-v0-patch/data/emix_index/{task}
+  train_root: /root/autodl-tmp/sin-v0-patch/outputs/train/{task}
+  eval_root: /root/autodl-tmp/sin-v0-patch/outputs/eval/{task}
+  log_root: /root/autodl-tmp/sin-v0-patch/logs
 
 logging:
   # Roll each worker's log into a new 000-000N.log once a single file exceeds
@@ -33,7 +38,9 @@ environments:
   # to strip stale /usr/local/cuda cuBLASLt from their runtime library path.
 
 pipeline:
-  episodes_per_task: 500
+  episodes_per_task: 300
+  instance_annotations: true
+  policies: [baseline, emix, patch]
   image_width: 84
   image_height: 84
   collection_fps: 17
@@ -41,6 +48,8 @@ pipeline:
   evaluation_episodes: 100
   evaluation_seed: 0
   save_evaluation_video: true
+  # RoboTwin/Curobo initialization compatibility value. The centered top-camera
+  # task moves the idle right articulation to x=5 m after planner setup.
   piper_distance: 0.6
 
 # Post-index visualization: every task with a complete EmixIndex is rendered
@@ -51,7 +60,7 @@ pipeline:
 # scripts/assets.py write under outputs/assets_vis/ instead, so batches never
 # mix.
 visualization:
-  output_root: outputs/intersections
+  output_root: /root/autodl-tmp/sin-v0-patch/outputs/intersections
   camera: isometric          # 3D camera preset (front/top/side/isometric/close)
   window_width: 2400         # Chrome CSS window width for the screenshot
   window_height: 2800        # Chrome CSS window height (tall enough for all three figures)
@@ -97,13 +106,13 @@ gpu_batches:
   # when more CUDA devices are actually visible. Within-batch order is
   # applied automatically by flow.validate().
   "0":
-    - blocks_ranking_rgb_left_central_wide_cam
-    - place_burger_fries_left_central_wide_cam
-    - place_cans_plasticbox_left_central_wide_cam
-    - stack_blocks_two_left_central_wide_cam
-    - blocks_ranking_size_left_central_wide_cam
-    - place_bread_basket_left_central_wide_cam
-    - place_bread_skillet_left_central_wide_cam
-    - place_can_basket_left_central_wide_cam
-    - place_dual_shoes_left_central_wide_cam
-    - stack_bowls_two_left_central_wide_cam
+    - blocks_ranking_rgb_left_cen_arm_top_cam
+    - place_burger_fries_left_cen_arm_top_cam
+    - place_cans_plasticbox_left_cen_arm_top_cam
+    - stack_blocks_two_left_cen_arm_top_cam
+    - blocks_ranking_size_left_cen_arm_top_cam
+    - place_bread_basket_left_cen_arm_top_cam
+    - place_bread_skillet_left_cen_arm_top_cam
+    - place_can_basket_left_cen_arm_top_cam
+    - place_dual_shoes_left_cen_arm_top_cam
+    - stack_bowls_two_left_cen_arm_top_cam

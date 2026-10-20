@@ -56,6 +56,8 @@ def make_emix_loader(
         mixup_beta=float(getattr(loader_cfg, "mixup_beta", 1.6)),
         mixup_visual_keys=getattr(loader_cfg, "mixup_visual_keys", None),
         mixup_state_mode=str(getattr(loader_cfg, "mixup_state_mode", "anchor")),
+        mixup_image_mode=str(getattr(loader_cfg, "mixup_image_mode", "linear")),
+        annotation_root=str(getattr(loader_cfg, "annotation_root", "")),
         seed=int(getattr(loader_cfg, "seed", 0)),
         include_task=registration.include_task,
     )

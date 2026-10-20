@@ -225,8 +225,8 @@ PCD 可用作训练后诊断或附加基线，但不建议作为第一个改动�
 - L2：[端点加载、像素混合与 anchor state](../../embodied_mixup/policies/utils/emix_loader_registry_utils.py)，约 470–550 行。`emix_source_images`、`emix_states` 已存在，可作为新辅助项的数据入口；仍需确认训练预处理对嵌套端点的归一化和设备搬运。
 - L3：[ACT 加权 L1](../../embodied_mixup/policies/ACT/emix_act.py)，约 30–52 行。
 - L4：[候选构造](../../embodied_mixup/candidates/pairs.py)与[动作过滤](../../embodied_mixup/candidates/action_filter.py)；阈值和有效索引以归档 metadata 为准。
-- L5：[当前十任务回退审计](../analysis/20260911-top500-emix-regression-audit.md)，包含采样、事件窗口、评测匹配及输出数据路径。
-- L6：[历史对比审计](../analysis/20260911-emix-historical-comparison.md)，包含真实 metrics、机位、阈值变化和统计限制。
+- L5：[当前十任务回退审计](../results/20260911-top500-emix-regression-audit.md)，包含采样、事件窗口、评测匹配及输出数据路径。
+- L6：[历史对比审计](../results/20260911-emix-historical-comparison.md)，包含真实 metrics、机位、阈值变化和统计限制。
 - L7：本机安装文件 `/home/rogerspyke/miniforge3/envs/emix-twin/lib/python3.10/site-packages/lerobot/policies/diffusion/modeling_diffusion.py`，`_prepare_global_conditioning`，约 246–282 行。本条指向已检查的本机依赖，不代表所有 LeRobot 版本。
 - 背景材料：[原方法说明](method.md)、[原理论说明](EMIX.md)、[旧文献综述](emixLiteratureSurvey.md)。当前代码实际为像素混合与双动作端点监督，阅读旧综述时需避免沿用“特征混合、动作线性插值”的泛化描述。
 

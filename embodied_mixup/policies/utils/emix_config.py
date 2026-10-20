@@ -113,3 +113,11 @@ def apply_emix_schema(policy_cfg: Any, emix_payload: dict[str, Any]) -> None:
     policy_cfg.mixup_loss_weight = loss_weight
     policy_cfg.mixup_visual_keys = visual_keys
     policy_cfg.mixup_state_mode = state_mode
+    image_mode = str(mixup_payload.get("image_mode", policy_cfg.mixup_image_mode))
+    if image_mode not in ("linear", "patch"):
+        raise ValueError("emix.mixup.image_mode must be 'linear' or 'patch'")
+    annotation_root = str(mixup_payload.get("annotation_root", policy_cfg.annotation_root))
+    if image_mode == "patch" and not annotation_root:
+        raise ValueError("emix.mixup.annotation_root is required for patch mode")
+    policy_cfg.mixup_image_mode = image_mode
+    policy_cfg.annotation_root = annotation_root

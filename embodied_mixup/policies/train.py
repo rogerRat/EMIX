@@ -504,6 +504,8 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
             mixup_beta=float(cfg.policy_cfg.mixup_beta),
             mixup_visual_keys=cfg.policy_cfg.mixup_visual_keys,
             mixup_state_mode=str(cfg.policy_cfg.mixup_state_mode),
+            mixup_image_mode=str(getattr(cfg.policy_cfg, "mixup_image_mode", "linear")),
+            annotation_root=str(getattr(cfg.policy_cfg, "annotation_root", "")),
             seed=0,
         )
         dataset = make_emix_loader(
@@ -547,6 +549,8 @@ def _build_emix_dataset(cfg: EmixTrainConfig):
         mixup_beta=float(cfg.policy_cfg.mixup_beta),
         mixup_visual_keys=cfg.policy_cfg.mixup_visual_keys,
         mixup_state_mode=str(cfg.policy_cfg.mixup_state_mode),
+        mixup_image_mode=str(getattr(cfg.policy_cfg, "mixup_image_mode", "linear")),
+        annotation_root=str(getattr(cfg.policy_cfg, "annotation_root", "")),
         seed=0,
     )
     dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))

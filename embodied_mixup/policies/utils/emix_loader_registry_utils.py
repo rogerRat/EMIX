@@ -35,6 +35,8 @@ class EmixLoaderSettings:
     mixup_beta: float = 1.6
     mixup_visual_keys: list[str] | None = None
     mixup_state_mode: str = "anchor"
+    mixup_image_mode: str = "linear"
+    annotation_root: str = ""
     seed: int = 0
     include_task: bool = False
 
@@ -391,6 +393,17 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
         self.policy_temporal_spec = policy_temporal_spec
         self.loader_cfg = loader_cfg
         self._rng = random.Random(loader_cfg.seed)
+        if loader_cfg.mixup_image_mode not in ("linear", "patch"):
+            raise ValueError("mixup_image_mode must be 'linear' or 'patch'")
+        self.annotation_reader = None
+        if loader_cfg.mixup_image_mode == "patch":
+            if not loader_cfg.annotation_root:
+                raise ValueError("annotation_root is required for patch augmentation")
+            from .patch_annotations import PatchAnnotationReader
+            self.annotation_reader = PatchAnnotationReader(
+                Path(loader_cfg.annotation_root), self.reader.dataset,
+                self.reader._resolve_episode_bounds(),
+            )
 
         alpha_mode = loader_cfg.mixup_alpha_mode
         if alpha_mode not in ("beta", "fixed"):
@@ -468,7 +481,7 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                 f"current frame [0], got {obs_pairs}."
             )
         action_pairs = self._resolve_action_indices(obs_len)
-        alpha = self._sample_alpha()
+        alpha = self._sample_alpha() if self.loader_cfg.mixup_image_mode == "linear" else None
 
         obs_0 = [_frame_dict_from_window(window_0, i) for i in obs_pairs]
         obs_1 = [_frame_dict_from_window(window_1, i) for i in obs_pairs]
@@ -499,7 +512,12 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                 for item_0, item_1 in zip(obs_0, obs_1):
                     tensor_0 = item_0[key].to(dtype=torch.float32)
                     tensor_1 = item_1[key].to(dtype=torch.float32)
-                    mixed.append(alpha * tensor_0 + (1.0 - alpha) * tensor_1)
+                    if self.loader_cfg.mixup_image_mode == "patch":
+                        frame_1 = int(group.members[1].source_frame_index)
+                        mask = self.annotation_reader.target_mask(frame_1)
+                        mixed.append(hard_patch_image(tensor_0, tensor_1, mask))
+                    else:
+                        mixed.append(alpha * tensor_0 + (1.0 - alpha) * tensor_1)
                 batch[key] = torch.stack(mixed, dim=0)
             elif key == state_key:
                 state_tensor = self._stack_items(obs_0, key)
@@ -547,7 +565,8 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                     dtype=torch.float32
                 ),
             ]
-        batch["emix_alpha"] = torch.tensor(alpha, dtype=torch.float32)
+        if alpha is not None:
+            batch["emix_alpha"] = torch.tensor(alpha, dtype=torch.float32)
         batch["emix_mask"] = valid_mask
         batch[self.policy_temporal_spec.action_pad_key] = ~valid_mask
         batch["action_is_pad"] = ~valid_mask
@@ -559,6 +578,16 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                 group.group_id, member_0_id
             )["feature_payload"]["task"][0]
         return batch
+
+
+def hard_patch_image(image_a: torch.Tensor, image_b: torch.Tensor, target_mask: Any) -> torch.Tensor:
+    """Copy target pixels from image_b onto image_a without modifying the mask exterior."""
+    if image_a.shape != image_b.shape or image_a.ndim != 3:
+        raise ValueError("patch images must have matching CxHxW shapes")
+    mask = torch.as_tensor(target_mask, device=image_a.device, dtype=torch.bool)
+    if tuple(mask.shape) != tuple(image_a.shape[-2:]):
+        raise ValueError("patch target mask must match image height and width")
+    return torch.where(mask.unsqueeze(0), image_b, image_a)
 
 
 def _frame_dict_from_window(window_payload: dict[str, Any], frame_idx: int) -> dict[str, Any]:

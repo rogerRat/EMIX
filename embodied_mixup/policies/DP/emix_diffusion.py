@@ -62,9 +62,13 @@ class EmixDiffusionPolicy(DiffusionPolicy):
         loss_1 = F.mse_loss(pred_1, target_1, reduction="none")
 
         valid_mask = (~batch["action_is_pad"]).unsqueeze(-1).to(dtype=loss_0.dtype)
+        denom = valid_mask.expand_as(loss_0).sum().clamp_min(1.0)
+        if self.config.mixup_image_mode == "patch":
+            loss = (loss_0 * valid_mask).sum() / denom + (loss_1 * valid_mask).sum() / denom
+            return loss, {"emix_loss_weight": float(self.config.mixup_loss_weight)}
+
         alpha = batch["emix_alpha"].to(dtype=loss_0.dtype).view(-1, 1, 1)
         mixed_loss = ((alpha * loss_0) + ((1.0 - alpha) * loss_1)) * valid_mask
-        denom = valid_mask.expand_as(mixed_loss).sum().clamp_min(1.0)
         return mixed_loss.sum() / denom, {
             "emix_loss_weight": float(self.config.mixup_loss_weight),
         }

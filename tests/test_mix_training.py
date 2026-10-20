@@ -1,4 +1,4 @@
-"""Unit tests for EMIX collage training settings and scheduling."""
+"""Unit tests for EMIX patch training settings and scheduling."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from embodied_mixup.policies.utils.mix_scheduler_utils import (
 )
 from embodied_mixup.policies.utils.mix_scheduler import make_mix_scheduler
 from embodied_mixup.policies.utils.emix_loader_registry_utils import EmixLoaderSettings
+from embodied_mixup.policies.DP.cfg_emix_diffusion import EmixDiffusionConfig
 from embodied_mixup.policies import train as train_module
 
 
@@ -154,30 +155,28 @@ class TestMakeScheduler(unittest.TestCase):
             make_mix_scheduler({"batch_prob": 0.2})
 
 
-class TestCollageConfig(unittest.TestCase):
-    def test_default_settings_are_alpha_free(self):
+class TestPatchConfig(unittest.TestCase):
+    def test_default_settings_use_linear_alpha_path(self):
         cfg = EmixLoaderSettings(policy_type="emix_diffusion")
-        self.assertEqual(cfg.collage_difference_threshold, 0.08)
-        self.assertEqual(cfg.collage_dilation_kernel, 3)
-        self.assertFalse(hasattr(cfg, "mixup_alpha_mode"))
+        self.assertEqual(cfg.mixup_image_mode, "linear")
+        self.assertEqual(cfg.mixup_alpha_mode, "beta")
 
-    def test_collage_copies_only_changed_region_without_blending(self):
-        from embodied_mixup.policies.utils.emix_loader_registry_utils import EmixPolicyDataset
+    def test_patch_copies_only_registered_mask_without_blending(self):
+        from embodied_mixup.policies.utils.emix_loader_registry_utils import hard_patch_image
 
-        dataset = object.__new__(EmixPolicyDataset)
-        dataset.loader_cfg = EmixLoaderSettings(
-            policy_type="emix_diffusion",
-            collage_difference_threshold=0.1,
-            collage_dilation_kernel=1,
-        )
-        image_0 = torch.zeros(3, 5, 5)
-        image_1 = image_0.clone()
-        image_1[:, 2, 2] = 1.0
-        collage, copied = dataset._make_collage(image_0, image_1)
-        self.assertTrue(bool(copied[2, 2]))
-        self.assertEqual(float(collage[0, 2, 2]), 1.0)
-        self.assertEqual(float(collage[0, 0, 0]), 0.0)
-        self.assertNotEqual(float(collage[0, 2, 2]), 0.5)
+        image_a = torch.zeros(3, 5, 5)
+        image_b = torch.zeros_like(image_a)
+        image_b[:, 2, 2] = 1.0
+        mask = torch.zeros(5, 5, dtype=torch.bool)
+        mask[2, 2] = True
+        result = hard_patch_image(image_a, image_b, mask)
+        self.assertEqual(float(result[0, 2, 2]), 1.0)
+        self.assertEqual(float(result[0, 0, 0]), 0.0)
+        self.assertNotEqual(float(result[0, 2, 2]), 0.5)
+
+    def test_patch_requires_annotation_root(self):
+        with self.assertRaisesRegex(ValueError, "annotation_root"):
+            EmixDiffusionConfig(mixup_image_mode="patch")
 
     def test_loader_settings_no_mixup_prob(self):
         cfg = EmixLoaderSettings(policy_type="emix_diffusion")

@@ -30,26 +30,31 @@ def freeze_right_action(
 ) -> np.ndarray:
     """Return a copied qpos vector whose right-arm suffix is frozen to home.
 
-    @input: native-width qpos action (one-dimensional), full-width right-home
-        qpos vector (one-dimensional), and the left projection boundary.
-    @output: np.ndarray float32 copy with indices ``[left_qpos_dim:]``
-        replaced by the corresponding home values; never mutates the input.
-    @scenario: A policy emits a full 14-wide qpos target; before the simulator
-        step the right suffix is overwritten with the captured home qpos so
-        the inactive right arm never moves.
+    @input: left-only policy action (or native-width compatibility action),
+        full-width right-home qpos vector, and left projection boundary.
+    @output: native-width simulator action with the right suffix supplied from
+        the captured home qpos; never mutates the policy output.
+    @scenario: The policy emits only left-arm qpos. Restore the captured right
+        home qpos only at the RoboTwin simulator boundary so the inactive arm
+        is not a policy input or output and never moves.
     """
     arr = np.asarray(action)
     home = np.asarray(home_qpos, dtype=np.float32)
     native_width = 2 * left_qpos_dim
     if arr.ndim != 1 or home.ndim != 1:
         raise ValueError("freeze_right_action expects one-dimensional qpos vectors")
-    if arr.shape[0] != native_width:
-        raise ValueError(
-            f"native qpos width must be {native_width}, got {arr.shape[0]}"
-        )
     if home.shape[0] != native_width:
         raise ValueError(
             f"home qpos width must be {native_width}, got {home.shape[0]}"
+        )
+    if arr.shape[0] == left_qpos_dim:
+        # Policy output is left-only; restore right home values only at the
+        # RoboTwin simulator boundary.
+        return np.concatenate((arr.astype(np.float32), home[left_qpos_dim:]))
+    if arr.shape[0] != native_width:
+        raise ValueError(
+            f"policy qpos width must be {left_qpos_dim} (left-only) or "
+            f"{native_width} (native compatibility), got {arr.shape[0]}"
         )
     projected = arr.astype(np.float32).copy()
     projected[left_qpos_dim:] = home[left_qpos_dim:]
@@ -95,17 +100,19 @@ def _decode_head_camera(observation, width, height):
 
 
 def _make_policy_observation(
-    observation, width, height, *, image_noise=None, noise_seed=0, noise_step=0,
+    observation, width, height, *, left_qpos_dim=7, image_noise=None, noise_seed=0, noise_step=0,
 ):
     """Map a RoboTwin observation to the LeRobot feature contract.
 
     @input: observation RoboTwin dict, image width/height.
-    @output: dict containing head image and complete joint vector batch tensors.
+    @output: dict containing head image and left-arm-only state batch tensors.
     @scenario: Keep policy inputs identical to the converted training dataset.
     """
     batch = {
         "observation.images.head_camera": _decode_head_camera(observation, width, height),
-        "observation.state": torch.as_tensor(observation["joint_action"]["vector"], dtype=torch.float32).unsqueeze(0),
+        "observation.state": torch.as_tensor(
+            observation["joint_action"]["vector"][:left_qpos_dim], dtype=torch.float32
+        ).unsqueeze(0),
     }
     return add_image_noise(
         batch, image_noise or ImageNoiseConfig(), seed=noise_seed, step=noise_step,
@@ -336,13 +343,16 @@ def main(args):
             while task.take_action_cnt < task.step_lim:
                 observation = task.get_obs()
                 policy_obs = _make_policy_observation(
-                    observation, image_width, image_height, image_noise=image_noise,
+                    observation, image_width, image_height, left_qpos_dim=left_dim, image_noise=image_noise,
                     noise_seed=image_noise_seed + seed * 1_000_000,
                     noise_step=task.take_action_cnt + 1,
                 )
                 action = _policy_action(policy, preprocessor, postprocessor, policy_obs, device)
-                if action.shape != home_qpos.shape:
-                    raise ValueError(f"Checkpoint action shape {action.shape} does not match RoboTwin qpos shape {home_qpos.shape}.")
+                if action.shape != (left_dim,):
+                    raise ValueError(
+                        f"Checkpoint action shape {action.shape} does not match "
+                        f"left-arm-only qpos shape {(left_dim,)}."
+                    )
                 action = freeze_right_action(action, home_qpos, left_dim)
                 task.take_action(action, action_type="qpos")
                 if task.eval_success or task.check_success():

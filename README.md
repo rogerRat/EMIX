@@ -2,7 +2,7 @@
 
 ## 简介
 
-本项目是一个基于 RoboTwin 和 LeRobot 的 Embodied Mixup 框架。当前活动基准与首轮实验流程见 [docs/ROBOTWIN.md](docs/ROBOTWIN.md)。ManiSkill 历史实现已归档到 `legacy/maniskill/`，不再是运行入口。
+本项目是一个基于 RoboTwin 和 LeRobot 的 Embodied Mixup 框架。当前活动基准与首轮实验流程见 [docs/sop/01-data-generation/SOP-01-data-generation-pipeline.md](docs/sop/01-data-generation/SOP-01-data-generation-pipeline.md)。ManiSkill 历史实现已归档到 `legacy/maniskill/`，不再是运行入口。
 
 ### 动机
 
@@ -87,8 +87,8 @@ bash dependencies/_instal_sapien.sh \
 ```
 
 安装顺序、组件边界、无头服务器排障与验收命令见
-[SOP-00 环境安装](docs/sop/SOP-00-environment-installation.md)。
-本次故障与实测输出见[修复记录](docs/20261019_emix_sapien_runtime_repair.md)。
+[SOP-00 环境安装](docs/sop/04-environment-and-rendering/SOP-00-environment-installation.md)。
+本次故障与实测输出见[修复记录](docs/sop/04-environment-and-rendering/20261019_emix_sapien_runtime_repair.md)。
 `dependencies/requirements.txt` 是主环境的历史锁定快照，含需由安装脚本分流的 CUDA 轮子；
 不要直接对新环境运行 `pip install -r dependencies/requirements.txt`。
 
