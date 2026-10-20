@@ -86,8 +86,10 @@ def _episode_image_stats(dataset, episode_index: int, image_key: str) -> dict[st
     episode = dataset.meta.episodes[episode_index]
     start = int(episode["dataset_from_index"])
     end = int(episode["dataset_to_index"])
-    frames = [dataset[index][image_key] for index in range(start, end)]
-    return _stats_from_tensor(torch.stack(frames))
+    dataset._ensure_hf_dataset_loaded()
+    timestamps = [float(value) for value in dataset.hf_dataset[start:end]["timestamp"]]
+    frames = dataset._query_videos({image_key: timestamps}, episode_index)[image_key]
+    return _stats_from_tensor(frames)
 
 
 def _load_existing_episode_stats(row: dict, image_keys: list[str]) -> dict[str, dict[str, np.ndarray]]:

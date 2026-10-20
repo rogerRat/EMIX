@@ -73,8 +73,11 @@ def compute_source_dataset_fingerprint(dataset_root: str | Path) -> dict[str, An
             if top in _FINGERPRINT_EXCLUDED_PREFIXES:
                 continue
             size = fpath.stat().st_size
-            sha = hashlib.sha256(fpath.read_bytes()).hexdigest()
-            file_records.append({"relative_path": rel, "sha256": sha, "size_bytes": size})
+            digest = hashlib.sha256()
+            with fpath.open("rb") as source_file:
+                for chunk in iter(lambda: source_file.read(8 * 1024 * 1024), b""):
+                    digest.update(chunk)
+            file_records.append({"relative_path": rel, "sha256": digest.hexdigest(), "size_bytes": size})
 
     # Sort by POSIX relative path for determinism
     file_records.sort(key=lambda r: r["relative_path"])
@@ -701,6 +704,7 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
     output_path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     progress_interval = _compute_progress_interval(total_pairs)
+    group_encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"))
     with open(tmp_path, "w", encoding="utf-8") as handle:
         handle.write('{"content": {"cross_point_groups": [')
         for idx in range(total_pairs):
@@ -716,7 +720,8 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
             )
             if idx:
                 handle.write(", ")
-            json.dump(group_payload, handle, sort_keys=True, separators=(",", ":"))
+            for chunk in group_encoder.iterencode(group_payload):
+                handle.write(chunk)
             if _should_log_progress(idx, total_pairs, progress_interval):
                 logger.info(
                     "[candidates.index] Group stream progress: %d/%d candidate pairs written",

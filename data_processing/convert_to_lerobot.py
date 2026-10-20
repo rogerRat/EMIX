@@ -129,7 +129,6 @@ def _load_episode(path, image_width, image_height, left_qpos_dim, *, require_ins
         raise ValueError(f"{path} has fewer than two aligned frames.")
     if require_instance_annotations and (instance_ids is None or len(instance_ids) < length):
         raise ValueError(f"{path} lacks frame-aligned observation/head_camera/instance_id data.")
-    raw_images = rgb[:length - 1].copy()
     rgb = np.asarray([_resize_rgb(frame, image_width, image_height) for frame in rgb[:length]])
     state = state[:length]
     left_eef = left_eef[:length]
@@ -150,7 +149,6 @@ def _load_episode(path, image_width, image_height, left_qpos_dim, *, require_ins
     action = state[1:].copy()
     return {
         "images": rgb[:-1],
-        "raw_images": raw_images,
         "state": state[:-1],
         "action": action,
         "left_eef": left_eef[:-1],
@@ -266,7 +264,7 @@ def main(args):
                 frame_ids=frame_ids,
             )
             _, annotation = transform_pair(
-                episode["raw_images"], annotation,
+                None, annotation,
                 stream_key=(repo_id, str(episode_index), "head_camera"),
                 frame_ids=frame_ids, indices=list(range(len(frame_ids))),
                 size=(args.image_width, args.image_height),
