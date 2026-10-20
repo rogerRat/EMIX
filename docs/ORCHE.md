@@ -32,3 +32,12 @@
 | 时间（Asia/Shanghai） | 阶段/进程 | GPU | 磁盘 | 发现与动作 |
 |---|---|---|---|---|
 | 2026-10-20 14:20 | 旧 run 冻结；转换日志在 top-camera 任务 | 0% / 2 MiB | 根卷 8.5 GiB；数据盘约 175 GiB | 确认旧运行不符合现协议，保留日志/检查点状态，停止将其作为续训来源；检查新协议采集配置后另建运行配置 |
+
+### 2026-10-20 14:40 更新
+
+- `dependencies/_install_twin.sh --check` 通过：RTX 5090 D、CUDA 12.8 Torch、SAPIEN 3.0.0b1、RT renderer 和 OIDN denoiser 可用；只有已知的 pkg_resources/Vulkan ICD warning，功能探针成功。
+- 10 个 `left_oppo_cam` 任务配置都存在。正式配置 `configs/scripts/run_sin_v0_patch_oppo.yaml` 将三臂、300 episodes、标注开启及隔离数据根指向 `/root/autodl-tmp/sin-v0-patch-oppo/formal/`；pilot 配置单独指向 `/pilot/`。
+- 真实验收 pilot 已启动：`blocks_ranking_rgb_left_oppo_cam` 单 episode，临时 task config，`--instance-annotations` 开启。不会更改正式 300-episode 配置。session: `sin-v0-patch-oppo-pilot`，状态文件 `/root/autodl-tmp/sin-v0-patch-oppo/state`。
+- 新增 `sin-v0-patch-oppo-inspect` tmux 巡检器，每 1800 秒记录状态、GPU/磁盘/进程/日志年龄；formal 状态若 worker 消失则用同一 resumable runbook 恢复。巡检日志：`/root/autodl-tmp/sin-v0-patch-oppo/inspection.log`。
+- pilot 启动时 GPU 利用率为 77%、显存 2329 MiB；RTX 5090 正在采集。根卷约 8.3 GiB 可用，数据盘约 178 GiB 可用。
+- 下一步：检查 pilot 的实例标注对象表与逐帧 RGB/掩码一致性（含 >255 ID）；用 pilot 完成 84×84 标注转换并核验保存格式。通过后立即启动正式十任务 prepare 阶段；随后按强制阶段屏障做 index/vis/train-eval。
