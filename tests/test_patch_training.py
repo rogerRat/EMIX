@@ -219,20 +219,40 @@ class DiffusionPatchLossTests(unittest.TestCase):
 
 
 class PatchAnnotationReaderTests(unittest.TestCase):
-    def test_resolves_target_mask_by_global_dataset_index(self):
+    def test_resolves_all_foreground_instances_by_global_dataset_index(self):
         from embodied_mixup.policies.utils.patch_annotations import PatchAnnotationReader
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "episode_0.instances.h5"
             labels = np.zeros((3, 2, 2), dtype=np.uint8)
             labels[1, 0, 1] = 1
+            labels[1, 1, 0] = 2
             with h5py.File(path, "w") as handle:
                 handle.attrs["schema_version"] = 1
-                handle.attrs["objects"] = json.dumps(["background", "patch_target"])
+                handle.attrs["objects"] = json.dumps(["background", "patch_target", "other_object"])
                 handle.create_dataset("labels", data=labels, chunks=(1, 2, 2), compression="gzip")
             reader = PatchAnnotationReader(Path(directory), object(), ([0, 3], [3, 6]))
             mask = reader.target_mask(1)
-            np.testing.assert_array_equal(mask, [[False, True], [False, False]])
+            np.testing.assert_array_equal(mask, [[False, True], [True, False]])
+
+    def test_scene_surfaces_and_robot_are_background(self):
+        from embodied_mixup.policies.utils.patch_annotations import PatchAnnotationReader
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "episode_0.instances.h5"
+            labels = np.array([[[1, 2, 3], [4, 5, 0]]], dtype=np.uint8)
+            objects = [
+                "background", "patch_target", "scene_table_6",
+                "scene_ground_1", "scene_link1_8", "scene_106_skillet_34",
+            ]
+            with h5py.File(path, "w") as handle:
+                handle.attrs["schema_version"] = 1
+                handle.attrs["objects"] = json.dumps(objects)
+                handle.create_dataset("labels", data=labels)
+            reader = PatchAnnotationReader(Path(directory), object(), ([0], [1]))
+            np.testing.assert_array_equal(
+                reader.target_mask(0), [[True, False, False], [False, True, False]]
+            )
 
     def test_missing_episode_sidecar_fails(self):
         from embodied_mixup.policies.utils.patch_annotations import PatchAnnotationReader
