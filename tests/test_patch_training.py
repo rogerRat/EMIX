@@ -13,7 +13,7 @@ import numpy as np
 
 import torch
 
-from embodied_mixup.policies.utils.emix_loader_registry_utils import hard_patch_image
+from embodied_mixup.policies.utils.emix_loader_registry_utils import hard_patch_image, mask_overlap_ratio
 
 
 class HardPatchImageTests(unittest.TestCase):
@@ -261,6 +261,127 @@ class PatchAnnotationReaderTests(unittest.TestCase):
             reader = PatchAnnotationReader(Path(directory), object(), ([0], [2]))
             with self.assertRaisesRegex(FileNotFoundError, "episode 0"):
                 reader.target_mask(0)
+
+
+class DetectOverlapTests(unittest.TestCase):
+    @staticmethod
+    def _record(sample_id, frame_a, frame_b):
+        group = SimpleNamespace(
+            group_id=f"group-{sample_id}",
+            members=[
+                SimpleNamespace(source_frame_index=frame_a),
+                SimpleNamespace(source_frame_index=frame_b),
+            ],
+        )
+        return SimpleNamespace(
+            sample_id=sample_id,
+            group=group,
+            member_ids=[f"{sample_id}-a", f"{sample_id}-b"],
+        )
+
+    @staticmethod
+    def _dataset(records, masks, refuse_ratio):
+        from embodied_mixup.policies.utils.emix_loader_registry_utils import EmixPolicyDataset
+
+        dataset = object.__new__(EmixPolicyDataset)
+        dataset.records = records
+        dataset.loader_cfg = SimpleNamespace(detect_overlap_refuse_ratio=refuse_ratio)
+        dataset.annotation_reader = SimpleNamespace(target_mask=lambda frame: masks[frame])
+        return dataset
+
+    def test_overlap_ratio_uses_intersection_over_union(self):
+        mask_a = np.array([[1, 1, 0], [0, 0, 0]], dtype=bool)
+        mask_b = np.array([[1, 0, 1], [0, 0, 0]], dtype=bool)
+        self.assertAlmostEqual(mask_overlap_ratio(mask_a, mask_b), 1.0 / 3.0)
+        self.assertEqual(mask_overlap_ratio(np.zeros((2, 2)), np.zeros((2, 2))), 0.0)
+
+    def test_over_limit_pair_is_replaced_by_next_feasible_pair(self):
+        from embodied_mixup.policies.utils.emix_loader_registry_utils import EmixTrainingSample
+
+        masks = {
+            0: np.array([[1, 1, 0, 0]], dtype=bool),
+            1: np.array([[1, 0, 0, 0]], dtype=bool),
+            2: np.array([[1, 0, 0, 0]], dtype=bool),
+            3: np.array([[0, 1, 0, 0]], dtype=bool),
+        }
+        records = [
+            EmixTrainingSample(self._record("bad", 0, 1).group, ["bad-a", "bad-b"], "bad"),
+            EmixTrainingSample(self._record("good", 2, 3).group, ["good-a", "good-b"], "good"),
+        ]
+        dataset = self._dataset(records, masks, refuse_ratio=0.2)
+        selected, selected_mask, fallback = dataset._resolve_patch_pair(0, records[0])
+        self.assertEqual(selected.sample_id, "good")
+        self.assertIsNone(fallback)
+        np.testing.assert_array_equal(selected_mask, masks[3])
+
+    def test_all_over_limit_pairs_fallback_to_minimum_and_record_reason(self):
+        from embodied_mixup.policies.utils.emix_loader_registry_utils import EmixTrainingSample
+
+        masks = {
+            0: np.array([[1, 1, 0, 0]], dtype=bool),
+            1: np.array([[1, 0, 0, 0]], dtype=bool),
+            2: np.array([[1, 1, 0, 0]], dtype=bool),
+            3: np.array([[1, 1, 0, 0]], dtype=bool),
+            4: np.array([[1, 1, 0, 0]], dtype=bool),
+            5: np.array([[1, 0, 1, 0]], dtype=bool),
+        }
+        specs = [("high", 0, 1), ("higher", 2, 3), ("lowest", 4, 5)]
+        records = [
+            EmixTrainingSample(
+                self._record(name, frame_a, frame_b).group,
+                [f"{name}-a", f"{name}-b"],
+                name,
+            )
+            for name, frame_a, frame_b in specs
+        ]
+        dataset = self._dataset(records, masks, refuse_ratio=0.2)
+        selected, _, fallback = dataset._resolve_patch_pair(0, records[0])
+        self.assertEqual(selected.sample_id, "lowest")
+        self.assertEqual(fallback["reason"], "all_candidate_pairs_exceed_refuse_ratio")
+        self.assertAlmostEqual(fallback["selected_overlap_ratio"], 1.0 / 3.0)
+        self.assertEqual(fallback["refuse_ratio"], 0.2)
+
+    def test_pipeline_cleanup_preserves_fallback_log(self):
+        import sys
+
+        scripts_dir = str(Path(__file__).resolve().parents[1] / "scripts")
+        if scripts_dir not in sys.path:
+            sys.path.insert(0, scripts_dir)
+        from run import preserve_detect_overlap_fallback_log
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            train_output = root / "train"
+            source = train_output / "checkpoints" / "detect_overlap_fallback.txt"
+            source.parent.mkdir(parents=True)
+            source.write_text("{\"train_step\":3}\n")
+            destination = root / "logs" / "detect_overlap_fallback" / "task_patch.txt"
+            preserve_detect_overlap_fallback_log(train_output, destination)
+            self.assertEqual(destination.read_text(), "{\"train_step\":3}\n")
+
+    def test_fallback_log_is_created_only_for_fallback_events(self):
+        import json
+        import tempfile
+        from embodied_mixup.policies.train import _record_detect_overlap_fallbacks
+
+        event = {
+            "reason": "all_candidate_pairs_exceed_refuse_ratio",
+            "refused_sample_id": "source",
+            "refused_overlap_ratio": 0.75,
+            "selected_sample_id": "selected",
+            "selected_overlap_ratio": 0.5,
+            "refuse_ratio": 0.1,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output_dir = Path(temp_dir)
+            _record_detect_overlap_fallbacks({"detect_overlap_fallback": [None]}, output_dir, 7)
+            log_path = output_dir / "checkpoints" / "detect_overlap_fallback.txt"
+            self.assertFalse(log_path.exists())
+            _record_detect_overlap_fallbacks({"detect_overlap_fallback": [event]}, output_dir, 8)
+            rows = [json.loads(line) for line in log_path.read_text().splitlines()]
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["train_step"], 8)
+            self.assertEqual(rows[0]["refused_sample_id"], "source")
 
 
 if __name__ == "__main__":

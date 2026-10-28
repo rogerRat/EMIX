@@ -1,3 +1,5 @@
+> 更新：2026-10-28
+
 # SOP-05：批量资产构建（assets.py）与实验流水线（run.py）
 
 环境安装以 [SOP-00](../04-environment-and-rendering/SOP-00-environment-installation.md) 为准。下文的
@@ -397,14 +399,16 @@ archive/DP-10tasks-<ep>ep-emix-baseline-<variant-kebab>-<YYYYMMDD>/
 |---|---|---|---|
 | `data/robotwin` `data/lerobot` `data/emix_index` | 10 任务三件套 | 按原规则整体 `mv` 进归档 | live 对应目录随后为空 |
 | `eval/` | 20 个 run | 每个 run 的 `metrics.json` 全保；评估视频默认保留该 run 视频数的 **5%**（100 episodes 默认 5 条），在整个 run 中均匀抽样；其他非大文件保留 | 其余评估视频及其他大文件删除 |
-| `train/` | 20 个任务 | 所有非大文件（包括 JSON、TXT 等配置与元数据） | 所有 `checkpoints/` / `ckpt` 目录及其他大文件一律删除 |
+| `train/` | 20 个任务 | 所有非大文件（包括 JSON、TXT 等配置与元数据）；若存在 `checkpoints/detect_overlap_fallback.txt`，先复制到该训练臂目录下并保留 | 所有 `checkpoints/` / `ckpt` 目录及其他大文件一律删除 |
 | `vis/` | 可视化 | 非大文件按原归档路径保留，包括 HTML、PNG、`*_assets`、`plotly.min.js` 中符合大小要求的文件 | 大文件删除 |
 
 通用保留规则：除 `data/{robotwin,lerobot,emix_index}` 按原规则整体归档外，
 归档中只保留非大文件；所有模型 checkpoint 无论大小都必须删除。评估视频按
 每个 run 单独计算 5%，不足 100 个 episode 时向上取整且至少保留 1 条；均匀抽样
 覆盖 run 的前、中、后段，并在 `SUMMARY.md` 记录保留比例和视频文件清单。其他
-非大文件（如 JSON、TXT 和小型调试产物）保留。
+非大文件（如 JSON、TXT 和小型调试产物）保留。若训练 checkpoint 下存在
+`detect_overlap_fallback.txt`，归档前必须复制到对应的 `train/<task>/<policy>/`
+目录（保留原始文件名），再删除 checkpoint 目录；不得因 checkpoint 清理丢弃该回退审计记录。
 
 归档后 live 的 `data/{robotwin,lerobot,emix_index}`、
 `outputs/{eval,train,intersections}` 应全部为空；用 `df -h` 核对释放量。归档前

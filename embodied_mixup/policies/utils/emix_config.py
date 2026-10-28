@@ -121,3 +121,16 @@ def apply_emix_schema(policy_cfg: Any, emix_payload: dict[str, Any]) -> None:
         raise ValueError("emix.mixup.annotation_root is required for patch mode")
     policy_cfg.mixup_image_mode = image_mode
     policy_cfg.annotation_root = annotation_root
+    overlap_payload = mixup_payload.get("detect_overlap") or {}
+    if not isinstance(overlap_payload, dict):
+        raise ValueError("emix.mixup.detect_overlap must be a mapping when present")
+    overlap_enable = overlap_payload.get("enable", False)
+    if not isinstance(overlap_enable, bool):
+        raise ValueError("emix.mixup.detect_overlap.enable must be a boolean")
+    overlap_ratio = float(overlap_payload.get("refuse_ratio", 0.5))
+    if not 0.0 <= overlap_ratio <= 1.0:
+        raise ValueError("emix.mixup.detect_overlap.refuse_ratio must be in [0.0, 1.0]")
+    if overlap_enable and image_mode != "patch":
+        raise ValueError("emix.mixup.detect_overlap.enable requires image_mode=patch")
+    policy_cfg.detect_overlap_enable = overlap_enable
+    policy_cfg.detect_overlap_refuse_ratio = overlap_ratio

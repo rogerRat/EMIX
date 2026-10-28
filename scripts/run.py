@@ -320,6 +320,24 @@ def completed_vis(html: Path, png: Path, task: str, *, require_assets: bool = Tr
     )
 
 
+def preserve_detect_overlap_fallback_log(train_output: Path, destination: Path, log: RotatingLog | None = None) -> None:
+    # Keep the audit trail before an incomplete training output is removed.
+    source = train_output / "checkpoints" / "detect_overlap_fallback.txt"
+    if not source.is_file():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with source.open(encoding="utf-8") as input_handle, destination.open("a", encoding="utf-8") as output_handle:
+        content = input_handle.read()
+        if content:
+            output_handle.write(content)
+            if not content.endswith("\n"):
+                output_handle.write("\n")
+    message = f"[flow] preserved overlap fallback log: {source} -> {destination}\n"
+    if log is not None:
+        log.write(message)
+    print(message, end="", flush=True)
+
+
 def remove_artifact(path: Path, description: str, log: RotatingLog | None = None) -> None:
     """Remove one known task artifact left by a failed pipeline stage."""
     if not path.exists() and not path.is_symlink():
@@ -1059,6 +1077,12 @@ def run_training_task(
                         log.write(message)
                         print(message, end="", flush=True)
                 if resume_from is None:
+                    fallback_archive = (
+                        configured_path(config, "log_root")
+                        / "detect_overlap_fallback"
+                        / f"{task}_{kind}.txt"
+                    )
+                    preserve_detect_overlap_fallback_log(incomplete_train, fallback_archive, log)
                     remove_artifact(incomplete_train, f"incomplete {kind} training without a complete last checkpoint", log)
             train_args = [
                 "python", "train/train.py", "--config", str(configs[f"{kind}_train"]),

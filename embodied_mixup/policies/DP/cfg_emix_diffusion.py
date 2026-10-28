@@ -21,6 +21,8 @@ class EmixDiffusionConfig(DiffusionConfig):
     mixup_state_mode: str = "anchor"
     mixup_image_mode: str = "linear"
     annotation_root: str = ""
+    detect_overlap_enable: bool = False
+    detect_overlap_refuse_ratio: float = 0.5
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -41,6 +43,10 @@ class EmixDiffusionConfig(DiffusionConfig):
             raise ValueError("mixup_image_mode must be 'linear' or 'patch'")
         if self.mixup_image_mode == "patch" and not self.annotation_root:
             raise ValueError("annotation_root is required when mixup_image_mode='patch'")
+        if not 0.0 <= self.detect_overlap_refuse_ratio <= 1.0:
+            raise ValueError("detect_overlap.refuse_ratio must be in [0.0, 1.0]")
+        if self.detect_overlap_enable and self.mixup_image_mode != "patch":
+            raise ValueError("detect_overlap can only be enabled with patch image mode")
 
     def validate_features(self) -> None:
         if self.robot_state_feature is None:

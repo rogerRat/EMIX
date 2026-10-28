@@ -58,6 +58,8 @@ def make_emix_loader(
         mixup_state_mode=str(getattr(loader_cfg, "mixup_state_mode", "anchor")),
         mixup_image_mode=str(getattr(loader_cfg, "mixup_image_mode", "linear")),
         annotation_root=str(getattr(loader_cfg, "annotation_root", "")),
+        detect_overlap_enable=bool(getattr(loader_cfg, "detect_overlap_enable", False)),
+        detect_overlap_refuse_ratio=float(getattr(loader_cfg, "detect_overlap_refuse_ratio", 0.5)),
         seed=int(getattr(loader_cfg, "seed", 0)),
         include_task=registration.include_task,
     )

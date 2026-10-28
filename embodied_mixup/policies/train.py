@@ -506,6 +506,8 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
             mixup_state_mode=str(cfg.policy_cfg.mixup_state_mode),
             mixup_image_mode=str(getattr(cfg.policy_cfg, "mixup_image_mode", "linear")),
             annotation_root=str(getattr(cfg.policy_cfg, "annotation_root", "")),
+            detect_overlap_enable=bool(getattr(cfg.policy_cfg, "detect_overlap_enable", False)),
+            detect_overlap_refuse_ratio=float(getattr(cfg.policy_cfg, "detect_overlap_refuse_ratio", 0.5)),
             seed=0,
         )
         dataset = make_emix_loader(
@@ -551,6 +553,8 @@ def _build_emix_dataset(cfg: EmixTrainConfig):
         mixup_state_mode=str(cfg.policy_cfg.mixup_state_mode),
         mixup_image_mode=str(getattr(cfg.policy_cfg, "mixup_image_mode", "linear")),
         annotation_root=str(getattr(cfg.policy_cfg, "annotation_root", "")),
+        detect_overlap_enable=bool(getattr(cfg.policy_cfg, "detect_overlap_enable", False)),
+        detect_overlap_refuse_ratio=float(getattr(cfg.policy_cfg, "detect_overlap_refuse_ratio", 0.5)),
         seed=0,
     )
     dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))
@@ -682,6 +686,34 @@ def _prepare_output_dir(output_dir: Path, *, allow_existing: bool = False) -> Pa
         raise FileExistsError(f"Output directory already exists and is not empty: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
+
+
+def _record_detect_overlap_fallbacks(batch: dict[str, Any], output_dir: Path, step: int) -> None:
+    events = [event for event in batch.get("detect_overlap_fallback", []) if event]
+    if not events:
+        return
+    checkpoint_root = output_dir / "checkpoints"
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    log_path = checkpoint_root / "detect_overlap_fallback.txt"
+    with log_path.open("a", encoding="utf-8") as handle:
+        for event in events:
+            entry = {"train_step": int(step), **event}
+            handle.write(json.dumps(entry, sort_keys=True, separators=(",", ":")) + "\n")
+            LOGGER.warning(
+                "DETECT_OVERLAP FALLBACK: step=%d refused=%s overlap=%.6f "
+                "selected=%s overlap=%.6f refuse_ratio=%.6f reason=%s log=%s",
+                step,
+                event.get("refused_sample_id"),
+                float(event.get("refused_overlap_ratio", 0.0)),
+                event.get("selected_sample_id"),
+                float(event.get("selected_overlap_ratio", 0.0)),
+                float(event.get("refuse_ratio", 0.0)),
+                event.get("reason"),
+                log_path,
+            )
+        handle.flush()
+        import os
+        os.fsync(handle.fileno())
 
 
 def _prune_optimizer_states(output_dir: Path, keep_checkpoint: Path) -> int:
@@ -948,6 +980,7 @@ def train(
                     nonemix_iter = iter(nonemix_dataloader)
                     batch = next(nonemix_iter)
 
+            _record_detect_overlap_fallbacks(batch, cfg.output_dir, step)
             batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=step)
             if batch_source == "emix" and emix_debug_exporter is not None:
                 emix_debug_exporter.export_batch(batch, step)
@@ -1008,6 +1041,7 @@ def train(
                 dl_iter = iter(dataloader)
                 batch = next(dl_iter)
 
+            _record_detect_overlap_fallbacks(batch, cfg.output_dir, step)
             batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=step)
             if emix_debug_exporter is not None:
                 emix_debug_exporter.export_batch(batch, step)
@@ -1064,6 +1098,7 @@ def train(
                 dl_iter = iter(dataloader)
                 batch = next(dl_iter)
 
+            _record_detect_overlap_fallbacks(batch, cfg.output_dir, step)
             batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=step)
             batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
             batch = _move_batch_to_device(batch, device)

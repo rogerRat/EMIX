@@ -37,6 +37,8 @@ class EmixLoaderSettings:
     mixup_state_mode: str = "anchor"
     mixup_image_mode: str = "linear"
     annotation_root: str = ""
+    detect_overlap_enable: bool = False
+    detect_overlap_refuse_ratio: float = 0.5
     seed: int = 0
     include_task: bool = False
 
@@ -404,6 +406,10 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                 Path(loader_cfg.annotation_root), self.reader.dataset,
                 self.reader._resolve_episode_bounds(),
             )
+        if not 0.0 <= loader_cfg.detect_overlap_refuse_ratio <= 1.0:
+            raise ValueError("detect_overlap_refuse_ratio must be in [0.0, 1.0]")
+        if loader_cfg.detect_overlap_enable and loader_cfg.mixup_image_mode != "patch":
+            raise ValueError("detect_overlap can only be enabled with patch image mode")
 
         alpha_mode = loader_cfg.mixup_alpha_mode
         if alpha_mode not in ("beta", "fixed"):
@@ -460,8 +466,54 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                 result.append((aligned_len - 1, False))
         return result
 
+    def _resolve_patch_pair(self, idx: int, record: EmixTrainingSample):
+        # Reject over-overlapping pairs and select a feasible replacement.
+        mask_a = self.annotation_reader.target_mask(int(record.group.members[0].source_frame_index))
+        mask_b = self.annotation_reader.target_mask(int(record.group.members[1].source_frame_index))
+        ratio = mask_overlap_ratio(mask_a, mask_b)
+        refuse_ratio = float(self.loader_cfg.detect_overlap_refuse_ratio)
+        if ratio <= refuse_ratio:
+            return record, mask_b, None
+
+        best_record = record
+        best_mask = mask_b
+        best_ratio = ratio
+        count = len(self.records)
+        for offset in range(1, count):
+            candidate_idx = (idx + offset) % count
+            candidate = self.records[candidate_idx]
+            candidate_mask_a = self.annotation_reader.target_mask(
+                int(candidate.group.members[0].source_frame_index)
+            )
+            candidate_mask_b = self.annotation_reader.target_mask(
+                int(candidate.group.members[1].source_frame_index)
+            )
+            candidate_ratio = mask_overlap_ratio(candidate_mask_a, candidate_mask_b)
+            if candidate_ratio <= refuse_ratio:
+                return candidate, candidate_mask_b, None
+            if candidate_ratio < best_ratio:
+                best_record, best_mask, best_ratio = candidate, candidate_mask_b, candidate_ratio
+
+        fallback = {
+            "reason": "all_candidate_pairs_exceed_refuse_ratio",
+            "refused_sample_id": record.sample_id,
+            "refused_group_id": record.group.group_id,
+            "refused_member_ids": list(record.member_ids),
+            "refused_overlap_ratio": ratio,
+            "selected_sample_id": best_record.sample_id,
+            "selected_group_id": best_record.group.group_id,
+            "selected_member_ids": list(best_record.member_ids),
+            "selected_overlap_ratio": best_ratio,
+            "refuse_ratio": refuse_ratio,
+        }
+        return best_record, best_mask, fallback
+
     def __getitem__(self, idx: int) -> dict[str, Any]:
         record = self.records[idx]
+        patch_mask = None
+        overlap_fallback = None
+        if self.loader_cfg.mixup_image_mode == "patch" and self.loader_cfg.detect_overlap_enable:
+            record, patch_mask, overlap_fallback = self._resolve_patch_pair(idx, record)
         group = record.group
         member_0_id, member_1_id = record.member_ids
 
@@ -513,8 +565,11 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                     tensor_0 = item_0[key].to(dtype=torch.float32)
                     tensor_1 = item_1[key].to(dtype=torch.float32)
                     if self.loader_cfg.mixup_image_mode == "patch":
-                        frame_1 = int(group.members[1].source_frame_index)
-                        mask = self.annotation_reader.target_mask(frame_1)
+                        if patch_mask is None:
+                            frame_1 = int(group.members[1].source_frame_index)
+                            mask = self.annotation_reader.target_mask(frame_1)
+                        else:
+                            mask = patch_mask
                         mixed.append(hard_patch_image(tensor_0, tensor_1, mask))
                     else:
                         mixed.append(alpha * tensor_0 + (1.0 - alpha) * tensor_1)
@@ -572,12 +627,25 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
         batch["action_is_pad"] = ~valid_mask
         batch["sample_id"] = record.sample_id
         batch["group_id"] = group.group_id
+        if self.loader_cfg.detect_overlap_enable:
+            batch["detect_overlap_fallback"] = overlap_fallback
         batch["member_ids"] = list(record.member_ids)
         if self.loader_cfg.include_task:
             batch["task"] = self.reader.load_member_window(
                 group.group_id, member_0_id
             )["feature_payload"]["task"][0]
         return batch
+
+
+def mask_overlap_ratio(mask_a: Any, mask_b: Any) -> float:
+    # Return intersection-over-union for two pixel masks.
+    a = np.asarray(mask_a, dtype=bool)
+    b = np.asarray(mask_b, dtype=bool)
+    if a.shape != b.shape:
+        raise ValueError(f"overlap masks must have matching shapes, got {a.shape} and {b.shape}")
+    intersection = int(np.count_nonzero(a & b))
+    union = int(np.count_nonzero(a | b))
+    return float(intersection / union) if union else 0.0
 
 
 def hard_patch_image(image_a: torch.Tensor, image_b: torch.Tensor, target_mask: Any) -> torch.Tensor:
