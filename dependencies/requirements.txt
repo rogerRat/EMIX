@@ -124,6 +124,7 @@ parso==0.8.6
 pexpect==4.9.0
 pfzy==0.3.4
 pillow==12.1.1
+playwright==1.64.0
 platformdirs==4.9.6
 plotly==6.8.0
 prompt_toolkit==3.0.52
@@ -158,6 +159,7 @@ num2words==0.5.14
 transformers==4.57.1
 sapien==3.0.3
 scikit-learn==1.7.2
+hdbscan==0.8.44
 scipy==1.15.3
 seaborn==0.13.2
 sentry-sdk==2.58.0

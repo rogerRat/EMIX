@@ -34,3 +34,6 @@ termcolor
 av
 matplotlib
 ffmpeg
+
+# EMIX online evaluation imports project helpers from the local checkout.
+-e ..

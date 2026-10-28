@@ -75,7 +75,25 @@ fi
 conda activate "$ENV_NAME"
 PYTHON_BIN="$CONDA_PREFIX/bin/python"
 
+verify_emix_imports() {
+    EMIX_PROJECT_ROOT="$ROOT_DIR" "$PYTHON_BIN" - <<'PY_EMIX_IMPORT'
+import os
+from pathlib import Path
+import embodied_mixup
+from embodied_mixup.datasets import require_lerobot_dataset_root
+from embodied_mixup.configs.config import resolve_project_output_path
+project_root = Path(os.environ["EMIX_PROJECT_ROOT"]).resolve()
+package_root = Path(embodied_mixup.__file__).resolve().parent.parent
+assert package_root == project_root, (
+    f"embodied_mixup resolved from {package_root}, expected {project_root}"
+)
+print(f"[emix-twin] embodied_mixup: {package_root}")
+print("[emix-twin] evaluator helper imports: PASS")
+PY_EMIX_IMPORT
+}
+
 if ((CHECK_ONLY)); then
+    verify_emix_imports
     bash "$ROOT_DIR/dependencies/_instal_sapien.sh" --python "$PYTHON_BIN" --check
     "$PYTHON_BIN" - <<'PY'
 import torch, toppra, warp
@@ -323,4 +341,5 @@ if [[ "$OIDN_MODE" == force || ( "$OIDN_MODE" == auto && "$needs_oidn" == 1 ) ]]
     "$PYTHON_BIN" "$ROOT_DIR/dependencies/if_visual.py" --denoiser oidn
 fi
 "$PYTHON_BIN" -m pip check
+verify_emix_imports
 echo "[emix-twin] Installation complete: $CONDA_PREFIX"

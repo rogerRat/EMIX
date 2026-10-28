@@ -132,6 +132,7 @@ import diffusers;      print(f'diffusers:     {diffusers.__version__}')
 import accelerate;     print(f'accelerate:    {accelerate.__version__}')
 import datasets;       print(f'datasets:      {datasets.__version__}')
 import sklearn;        print(f'scikit-learn:  {sklearn.__version__}')
+import hdbscan;        print("hdbscan:       available")
 import seaborn;        print(f'seaborn:       {seaborn.__version__}')
 import umap;           print(f'umap-learn:    {umap.__version__}')
 import importlib.metadata as metadata
@@ -139,6 +140,21 @@ print(f'transformers:  {metadata.version(\"transformers\")}')
 print(f'num2words:     {metadata.version(\"num2words\")}')
 "
 python -m pip check
+
+# Install the browser binary required by scripts/render_vis_png.py.
+python -m playwright install --with-deps chromium
+python - <<'PY_BROWSER_CHECK'
+from playwright.sync_api import sync_playwright
+with sync_playwright() as playwright:
+    browser = playwright.chromium.launch(
+        headless=True, args=["--no-sandbox", "--disable-gpu", "--enable-unsafe-swiftshader"]
+    )
+    page = browser.new_page()
+    page.set_content("<html><body>EMIX browser check</body></html>")
+    assert "EMIX browser check" in page.locator("body").inner_text()
+    browser.close()
+print("playwright chromium: launch and page-render check passed")
+PY_BROWSER_CHECK
 
 echo ""
 echo "============================================================"

@@ -47,7 +47,9 @@ def _load_dataset(dataset_root: Path):
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
     except ImportError:
         from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
-    return LeRobotDataset(repo_id=dataset_root.name, root=str(dataset_root))
+    # PyAV is available in the project environment and avoids requiring the
+    # separate FFmpeg shared libraries expected by TorchCodec on this host.
+    return LeRobotDataset(repo_id=dataset_root.name, root=str(dataset_root), video_backend="pyav")
 
 
 def _frame_to_unit_float(frame) -> np.ndarray:

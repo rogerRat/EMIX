@@ -59,6 +59,17 @@ def _find_chrome() -> str:
         resolved = shutil.which(name)
         if resolved:
             return resolved
+    # Use the managed browser installed by dependencies/_install.sh when there
+    # is no system Chrome/Chromium on PATH.
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            managed_chrome = Path(playwright.chromium.executable_path)
+        if managed_chrome.is_file():
+            return str(managed_chrome)
+    except Exception:
+        pass
     raise FileNotFoundError(
         "No Chrome/Chromium binary found on PATH (tried "
         f"{', '.join(CHROME_CANDIDATES)}). Set CHROME_BIN to the executable path."
