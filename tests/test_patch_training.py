@@ -229,7 +229,7 @@ class PatchAnnotationReaderTests(unittest.TestCase):
             labels[1, 1, 0] = 2
             with h5py.File(path, "w") as handle:
                 handle.attrs["schema_version"] = 1
-                handle.attrs["objects"] = json.dumps(["background", "patch_target", "other_object"])
+                handle.attrs["objects"] = json.dumps(["background", "block1", "other_object"])
                 handle.create_dataset("labels", data=labels, chunks=(1, 2, 2), compression="gzip")
             reader = PatchAnnotationReader(Path(directory), object(), ([0, 3], [3, 6]))
             mask = reader.target_mask(1)
@@ -242,7 +242,7 @@ class PatchAnnotationReaderTests(unittest.TestCase):
             path = Path(directory) / "episode_0.instances.h5"
             labels = np.array([[[1, 2, 3], [4, 5, 0]]], dtype=np.uint8)
             objects = [
-                "background", "patch_target", "scene_table_6",
+                "background", "block1", "scene_table_6",
                 "scene_ground_1", "scene_link1_8", "scene_106_skillet_34",
             ]
             with h5py.File(path, "w") as handle:

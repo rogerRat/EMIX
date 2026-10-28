@@ -23,6 +23,7 @@ class EmixDiffusionConfig(DiffusionConfig):
     annotation_root: str = ""
     detect_overlap_enable: bool = False
     detect_overlap_refuse_ratio: float = 0.5
+    segment_wise_enable: bool = False
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -45,6 +46,8 @@ class EmixDiffusionConfig(DiffusionConfig):
             raise ValueError("annotation_root is required when mixup_image_mode='patch'")
         if not 0.0 <= self.detect_overlap_refuse_ratio <= 1.0:
             raise ValueError("detect_overlap.refuse_ratio must be in [0.0, 1.0]")
+        if self.segment_wise_enable and not self.annotation_root:
+            raise ValueError("annotation_root is required when segment_wise.enable is true")
         if self.detect_overlap_enable and self.mixup_image_mode != "patch":
             raise ValueError("detect_overlap can only be enabled with patch image mode")
 

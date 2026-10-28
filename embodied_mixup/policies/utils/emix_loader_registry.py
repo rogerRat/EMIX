@@ -60,6 +60,7 @@ def make_emix_loader(
         annotation_root=str(getattr(loader_cfg, "annotation_root", "")),
         detect_overlap_enable=bool(getattr(loader_cfg, "detect_overlap_enable", False)),
         detect_overlap_refuse_ratio=float(getattr(loader_cfg, "detect_overlap_refuse_ratio", 0.5)),
+        segment_wise_enable=bool(getattr(loader_cfg, "segment_wise_enable", False)),
         seed=int(getattr(loader_cfg, "seed", 0)),
         include_task=registration.include_task,
     )

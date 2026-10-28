@@ -269,8 +269,17 @@ def main(args):
                 frame_ids=frame_ids, indices=list(range(len(frame_ids))),
                 size=(args.image_width, args.image_height),
             )
-            if "patch_target" not in annotation.objects:
-                raise ValueError(f"Episode {path.stem} object table has no patch_target role")
+            if "patch_target" in annotation.objects:
+                raise ValueError(
+                    f"Episode {path.stem} uses legacy object name 'patch_target'; "
+                    "regenerate the instance object table with canonical task-object names."
+                )
+            task_objects = [
+                name for name in annotation.objects
+                if name != "background" and not name.startswith("scene_")
+            ]
+            if not task_objects:
+                raise ValueError(f"Episode {path.stem} object table has no named task objects")
             annotation.save(annotations_root / f"episode_{episode_index}.instances.h5")
         for index in range(len(episode["action"])):
             dataset.add_frame({

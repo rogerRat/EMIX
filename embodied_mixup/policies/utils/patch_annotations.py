@@ -32,8 +32,8 @@ class PatchAnnotationReader:
         if not self.starts or len(self.starts) != len(self.ends):
             raise ValueError("Dataset episode boundaries are missing or invalid")
 
-    def target_mask(self, global_frame_index: int) -> np.ndarray:
-        """Load task-object pixels for a global source-dataset frame."""
+    def target_mask(self, global_frame_index: int, object_name: str | None = None) -> np.ndarray:
+        """Load task-object pixels, optionally restricted to one named object."""
         episode_index = bisect_right(self.starts, global_frame_index) - 1
         if 0 <= episode_index < len(self.starts):
             start, end = self.starts[episode_index], self.ends[episode_index]
@@ -51,11 +51,24 @@ class PatchAnnotationReader:
                     objects = json.loads(handle.attrs["objects"])
                     if not isinstance(objects, list) or not objects or objects[0] != "background":
                         raise ValueError(f"Annotation file has no background at label 0: {path}")
+                    if "patch_target" in objects:
+                        raise ValueError(
+                            f"Legacy object name 'patch_target' is unsupported; regenerate annotations: {path}"
+                        )
                     labels = handle["labels"]
                     if local_index >= len(labels):
                         raise ValueError(
                             f"Frame {local_index} is outside annotation episode {episode_index}"
                         )
+                    if object_name is not None:
+                        if object_name not in objects:
+                            raise ValueError(
+                                f"Segment object {object_name!r} is missing from annotation table: {path}"
+                            )
+                        object_id = objects.index(object_name)
+                        if not _is_task_object(object_name):
+                            raise ValueError(f"Segment object {object_name!r} is not a task object")
+                        return np.asarray(labels[local_index] == object_id)
                     foreground_ids = [
                         index for index, name in enumerate(objects)
                         if _is_task_object(name)

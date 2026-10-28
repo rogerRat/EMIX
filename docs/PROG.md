@@ -9,7 +9,7 @@
 ## 2026-10-22 02:13:08 CST
 **Patch 拼贴的目标范围与遮挡关系问题（已观察，尚未修复）**
 
-**准确版本（基于当前工作树）：**每个 episode 的任务通过 `patch_target_actor()` 固定返回一个 actor。采集端按该 actor 的 `per_scene_id` 生成 `patch_target` 实例标签。训练加载器以配对 member 0 的图像为 A（底图），member 1 的图像为 B（来源图），根据 B 的源帧读取掩码 `mask_B = labels_B == patch_target`，然后执行 `image_out = torch.where(mask_B, image_B, image_A)`。因此只复制 B 中这个 actor 当前可见的像素；其他非背景物体及目标 actor 被遮挡的像素均不在掩码中。掩码内 B 直接覆盖 A 的同坐标像素，没有跨图深度比较、遮挡顺序判断或物体完整形状重建；交换 A/B 会改变结果。代码位置：`third_party/RoboTwin/envs/_base_task.py:get_instance_object_map`、`embodied_mixup/policies/utils/patch_annotations.py:target_mask`、`embodied_mixup/policies/utils/emix_loader_registry_utils.py:__getitem__/hard_patch_image`。
+**当前实现说明：**每个任务通过 segment_object_actors() 给被操作对象提供规范逻辑名；patch_target_actor() 仅标记 Patch 实验选定对象，不另造特殊对象名。新采集对象表用这些规范名记录任务物体，场景表面和机器人部件仍用 scene_* 名称。Patch loader 对所有规范任务对象生成合并掩码，历史标注中的 patch_target 不再兼容；转换器和读取器会要求重新生成规范对象名标注。训练加载器以配对 member 0 的图像为 A（底图），member 1 的图像为 B（来源图），然后执行 image_out = torch.where(mask_B, image_B, image_A)。掩码内 B 直接覆盖 A 的同坐标像素，没有跨图深度比较、遮挡顺序判断或物体完整形状重建；交换 A/B 会改变结果。
 
 **简单直觉版本：**先选定 B 图里的一个物体，只把它露在画面中的部分剪出来，在原位置盖到 A 图上。不会把 B 中所有物体都剪来，也不会判断 A 中已有物体是否应该挡在它前面。谁作为底图、谁提供剪下的像素，会影响结果。
 

@@ -39,6 +39,7 @@ class EmixLoaderSettings:
     annotation_root: str = ""
     detect_overlap_enable: bool = False
     detect_overlap_refuse_ratio: float = 0.5
+    segment_wise_enable: bool = False
     seed: int = 0
     include_task: bool = False
 
@@ -387,6 +388,15 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             policy_temporal_spec=policy_temporal_spec,
         )
         self.records = self.reader.training_samples(loader_cfg.policy_type)
+        if loader_cfg.segment_wise_enable:
+            self.records = [
+                record for record in self.records
+                if record.group.members[0].segment is not None
+                and record.group.members[1].segment is not None
+                and record.group.members[0].segment.get("id") == record.group.members[1].segment.get("id")
+                and record.group.members[0].segment.get("object") == record.group.members[1].segment.get("object")
+            ]
+            logger.info("[emix.loader] Segment-wise filtering retained %d matched groups", len(self.records))
         if len(self.records) == 0:
             raise ValueError(
                 f"No trainable EMIX groups found in index: {emix_index_path}"
@@ -398,7 +408,7 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
         if loader_cfg.mixup_image_mode not in ("linear", "patch"):
             raise ValueError("mixup_image_mode must be 'linear' or 'patch'")
         self.annotation_reader = None
-        if loader_cfg.mixup_image_mode == "patch":
+        if loader_cfg.mixup_image_mode == "patch" or loader_cfg.segment_wise_enable:
             if not loader_cfg.annotation_root:
                 raise ValueError("annotation_root is required for patch augmentation")
             from .patch_annotations import PatchAnnotationReader
@@ -408,6 +418,10 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             )
         if not 0.0 <= loader_cfg.detect_overlap_refuse_ratio <= 1.0:
             raise ValueError("detect_overlap_refuse_ratio must be in [0.0, 1.0]")
+        if loader_cfg.segment_wise_enable and not self.annotation_reader:
+            raise ValueError("segment_wise.enable requires instance annotation reader")
+        if loader_cfg.segment_wise_enable and not self.records:
+            raise ValueError("segment_wise.enable found no groups with matching segment annotations")
         if loader_cfg.detect_overlap_enable and loader_cfg.mixup_image_mode != "patch":
             raise ValueError("detect_overlap can only be enabled with patch image mode")
 
@@ -468,8 +482,13 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
 
     def _resolve_patch_pair(self, idx: int, record: EmixTrainingSample):
         # Reject over-overlapping pairs and select a feasible replacement.
-        mask_a = self.annotation_reader.target_mask(int(record.group.members[0].source_frame_index))
-        mask_b = self.annotation_reader.target_mask(int(record.group.members[1].source_frame_index))
+        object_name = self._segment_object(record)
+        mask_a = self.annotation_reader.target_mask(
+            int(record.group.members[0].source_frame_index), object_name=object_name
+        )
+        mask_b = self.annotation_reader.target_mask(
+            int(record.group.members[1].source_frame_index), object_name=object_name
+        )
         ratio = mask_overlap_ratio(mask_a, mask_b)
         refuse_ratio = float(self.loader_cfg.detect_overlap_refuse_ratio)
         if ratio <= refuse_ratio:
@@ -482,11 +501,12 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
         for offset in range(1, count):
             candidate_idx = (idx + offset) % count
             candidate = self.records[candidate_idx]
+            candidate_object = self._segment_object(candidate) if self.loader_cfg.segment_wise_enable else None
             candidate_mask_a = self.annotation_reader.target_mask(
-                int(candidate.group.members[0].source_frame_index)
+                int(candidate.group.members[0].source_frame_index), object_name=candidate_object
             )
             candidate_mask_b = self.annotation_reader.target_mask(
-                int(candidate.group.members[1].source_frame_index)
+                int(candidate.group.members[1].source_frame_index), object_name=candidate_object
             )
             candidate_ratio = mask_overlap_ratio(candidate_mask_a, candidate_mask_b)
             if candidate_ratio <= refuse_ratio:
@@ -507,6 +527,16 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             "refuse_ratio": refuse_ratio,
         }
         return best_record, best_mask, fallback
+
+    def _segment_object(self, record: EmixTrainingSample) -> str | None:
+        if not self.loader_cfg.segment_wise_enable:
+            return None
+        left = record.group.members[0].segment
+        right = record.group.members[1].segment
+        if (left is None or right is None or left.get("id") != right.get("id")
+                or left.get("object") != right.get("object")):
+            raise ValueError(f"Group {record.group.group_id} lacks matching segment annotations")
+        return str(right["object"])
 
     def __getitem__(self, idx: int) -> dict[str, Any]:
         record = self.records[idx]
@@ -567,10 +597,20 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
                     if self.loader_cfg.mixup_image_mode == "patch":
                         if patch_mask is None:
                             frame_1 = int(group.members[1].source_frame_index)
-                            mask = self.annotation_reader.target_mask(frame_1)
+                            mask = self.annotation_reader.target_mask(
+                                frame_1, object_name=self._segment_object(record)
+                            )
                         else:
                             mask = patch_mask
                         mixed.append(hard_patch_image(tensor_0, tensor_1, mask))
+                    elif self.loader_cfg.segment_wise_enable:
+                        frame_1 = int(group.members[1].source_frame_index)
+                        mask = self.annotation_reader.target_mask(
+                            frame_1, object_name=self._segment_object(record)
+                        )
+                        alpha_image = alpha * tensor_0 + (1.0 - alpha) * tensor_1
+                        mask_tensor = torch.as_tensor(mask, device=tensor_0.device, dtype=torch.bool)
+                        mixed.append(torch.where(mask_tensor.unsqueeze(0), alpha_image, tensor_0))
                     else:
                         mixed.append(alpha * tensor_0 + (1.0 - alpha) * tensor_1)
                 batch[key] = torch.stack(mixed, dim=0)

@@ -2,7 +2,7 @@
 
 > 记录日期：2026-09-22
 > 更新：2026-10-28
-> 状态：条目 1 已实现训练/评估独立高斯噪声注入；条目 2 patch 与拼贴拒绝代码链路已接入，当前 sin-v0-patch 正式实验运行中（拼贴拒绝默认关闭），结果待完成后核验。
+> 状态：条目 1 已实现训练/评估独立高斯噪声注入；条目 2 Patch 与 detect_overlap 拼贴拒绝代码链路已接入并完成，当前 sin-v0-patch 正式实验运行中（拼贴拒绝默认关闭）；条目 3 训练侧 segment_wise 配置和 EmixIndex segment 字段已开始接入，任务专属边界/对象标注与采集对象表扩展仍待完成。
 
 ## 开发清单
 
@@ -23,15 +23,38 @@
    - **设计（2026-09-28；2026-09-29 通用标注模块已实现，拼贴训练待接入）**：与条目 3 共用仿真实例像素、任务对象表和逐帧阶段标注，具体接入见 [共同基础设施设计](semantic_augmentation_foundation.md)。仿真直接输出实例掩码，无需外部分割模型；拼贴后的双分支损失固定为 `L_A + L_B`，不除以 2。
 
    - **通用模块进展（2026-09-29）**：已实现实例编号紧凑映射、HDF5 无损压缩和 RGB/归属图同步抽帧、裁剪、缩放、翻转；11 项 CPU 测试通过。只做基本字段校验，不增加哈希。通用存储和同步变换已接入；真实仿真实例 ID 对齐仍待验收。缩小造成的边缘和小物体问题暂不修复。
-   - **patch 链路进展（2026-10-20）**：RoboTwin 采集可选写入原始 actor ID，十个 sin-v0 任务登记固定 patch_target；转换器将实例 ID 与 RGB 同步缩放并写入 LeRobot 伴随 HDF5；EMIX loader 按源 episode/frame 读取目标掩码，patch 图像不混 alpha，DP 两路损失直接相加。CPU 测试通过；尚未运行真实渲染 ID 对齐检查或正式采集。
+   - **patch 链路进展（2026-10-20）**：RoboTwin 采集可选写入原始 actor ID，十个 sin-v0 任务登记固定 Patch 对象；转换器将实例 ID 与 RGB 同步缩放并写入 LeRobot 伴随 HDF5；EMIX loader 按源 episode/frame 读取目标掩码，patch 图像不混 alpha，DP 两路损失直接相加。CPU 测试通过；尚未运行真实渲染 ID 对齐检查或正式采集。
+   - **完成（2026-10-28）：detect_overlap**：实现、配置解析、Patch loader 候选换样、全候选超限最低重叠回退及回退记录已接入；CPU 定向测试覆盖相关掩码几何和拒绝/回退逻辑。配置默认关闭，当前正式 Patch 配置不启用。后续分阶段增强及 Patch 应考虑利用该功能处理重叠掩码。
    - **实现（2026-10-28）：拼贴拒绝 `detect_overlap_refuse`**：配置位于 `emix.mixup.detect_overlap`，包含 `enable` 与 `refuse_ratio`。按两张来源图待拼贴掩码的交集像素数除以并集像素数计算重叠率；超过拒绝比例时轮换候选拼贴样本。若当前候选全部超限，选重叠率最低者继续训练，并输出明显警告。仅发生此全超限回退时，在训练输出的 checkpoint 路径下创建 `detect_overlap_fallback.txt`，记录训练步数、原始/实际样本、回退原因、重叠率及阈值；无回退时不创建文件。默认关闭，不能改变当前正式运行配置。训练主进程按实际消费 batch 的 optimizer step 记录回退，checkpoint 张量清理保留该 TXT；流水线清理不完整训练输出前会复制该日志到 `log_root/detect_overlap_fallback/<task>_<policy>.txt`，归档前也须将其复制到训练臂目录。CPU 定向测试覆盖掩码几何、阈值拒绝与换样本、全超限最小重叠回退、警告、日志创建条件及清理保留。
 
 3. **分阶段增强（Phase-aware Mixup）**
-   - **排期状态（2026-10-28）**：列入后续开发计划，排在 Patch 拼贴拒绝功能之后；具体方案待后续明确，本条暂不新增实现细节。
-   - 通过夹爪开合信号将任务手动划分为 pick / place 阶段：按时序，pick 动作之前的所有帧记为 **topick** 阶段，place 动作之前的所有帧记为 **toplace** 阶段。
-   - 阶段划分约束：一个阶段的划分不得逾越（越过）任何一个 pick 或 place 切换点，即阶段边界只能落在夹爪开合事件处。
-   - 分阶段增强规则：只增强任务的目标物体。例如 `pick apple on plate` 任务中，pick 阶段仅叠加 apple，place 阶段仅叠加 plate。
-   - **实施方式**：针对少数任务分别写固定阶段规则，依据专家操作顺序及指定夹爪开合事件生成逐帧标签；共用存储和读取接口，不开发通用阶段识别器。具体事件记录、帧对齐和目标选择见上述共同设计；本次不额外改变未来动作窗口。
+   - **目标**：配置 emix.mixup.segment_wise.enable: false|true。开启时，每个增强候选必须查询其两个来源帧在 EmixIndex 中的 segment 元数据；仅当 segment.id 相同且 segment.object 相同时保留配对。目标对象必须是实例标注对象表中的名称，Patch 仅覆盖该对象掩码；线性 Mix 仅在该对象掩码内做 alpha 混合，掩码外保留 A 图。缺少阶段/对象元数据或对象名无法解析时不得静默退化为全物体增强。
+   - **阶段边界**：依据各任务 play_once() 实际专家操作顺序登记每次 pick/place 的操作对象。闭合夹爪连续动作的中点作为 PICK 边界，张开夹爪连续动作的中点作为 PLACE 边界；阶段标签按边界展开到逐帧，并使用 operation_id + phase 形成稳定的 segment id。初始化张开、重复开合指令不当作操作事件。每次操作的 topick 和 toplace 均对应同一个被搬动物体；末次释放后的回程不再进入有效增强阶段。
+   - **任务脚本推导（当前 sin-v0 十任务）**：顺序来自 third_party/RoboTwin/envs/left/impl/*_impl.py 的 play_once() 和对应 pick/place 方法。下表列出每个连续 pick/place 周期的被操作对象；每个对象各有 topick、toplace 两个阶段，操作对象相同。
+
+     | 任务 | 专家操作顺序（每次 Pick → Place） |
+     |---|---|
+     | blocks_ranking_rgb_left_oppo_cam | block1（红）、block2（绿）、block3（蓝） |
+     | place_burger_fries_left_oppo_cam | hamburg、frenchfries |
+     | place_cans_plasticbox_left_oppo_cam | can1、can2 |
+     | stack_blocks_two_left_oppo_cam | block1、block2 |
+     | blocks_ranking_size_left_oppo_cam | block3（小）、block2（中）、block1（大） |
+     | place_bread_basket_left_oppo_cam | bread_0、bread_1 |
+     | place_bread_skillet_left_oppo_cam | bread |
+     | place_can_basket_left_oppo_cam | can |
+     | place_dual_shoes_left_oppo_cam | left_shoe、right_shoe |
+     | stack_bowls_two_left_oppo_cam | bowl1、bowl2 |
+
+     例如 place_bread_basket 的顺序为：从 episode 起点至第一次夹爪闭合中点，topick_0 → bread_0；闭合中点至第一次释放中点，toplace_0 → bread_0；释放中点至第二次闭合中点，topick_1 → bread_1；第二次闭合中点至第二次释放中点，toplace_1 → bread_1。其余任务按脚本顺序展开。表中列出的名称同时作为 segment.object 和实例对象表中的规范名称。
+   - **实现进度（2026-10-28）**：训练配置解析已支持 segment_wise.enable；EmixIndex member 支持可选 segment: {id, object}；训练侧只接受阶段及对象均匹配的候选，并可按实例名生成对象掩码，对 Patch 或线性 Mix 做对象范围限制。RoboTwin 十任务已增加显式 segment_object_actors() 对象清单；采集对象表对所有操作对象统一使用该清单中的规范逻辑名，Patch 目标不再使用特殊标签名。该配置默认关闭。当前索引构建、逐帧阶段生成和 EmixIndex segment 字段填充仍未接入。
+   - **关键前置工作**：RoboTwin 的 get_instance_object_map() 现按每个任务的 segment_object_actors() 登记所有被操作 actor；patch_target_actor() 只用于确认 Patch 目标对象身份，不改变该对象由 segment_object_actors() 指定的名称。标注和读取器不再接受历史名称 patch_target；旧标注及旧数据索引需重新生成，不把 scene_* 标签猜作任务对象。接下来需按任务顺序结合 gripper 连续开合事件中点生成逐帧 segment，再在建立 EmixIndex 时给每个 member 写入 segment: {id, object}。任务专属边界仍须逐项对照专家脚本和数据校准；不能仅靠通用夹爪阈值检测代替任务标注。
+   - **当前标注实施计划**：
+     1. 以新采集路径为准：确认十个任务的 instance_objects sidecar 对每个被操作 actor 使用 segment_object_actors() 中的规范名，且实例 ID 图与 RGB 同帧保存。旧标注和索引不作兼容读取；可用原始 actor ID 与可信对象表重新生成规范标注的，作为数据重建处理，否则整批重采。
+     2. 每个 episode 读取 left_gripper 序列，并按任务 play_once() 的操作表检查事件数。每轮应有一次连续闭合事件和一次连续释放事件；以对应连续变化区间的中点作为 Pick/Place 边界。先输出事件波形和帧号供人工复核；缺事件、多事件、事件方向/顺序错误或轨迹失败时，不自动猜边界，单独修正或剔除该 episode。
+     3. 经复核后生成逐帧 segment 标注：episode 开始到第一个 Pick 中点为第 0 个对象的 topick；Pick 中点到对应 Place 中点为该对象的 toplace；Place 中点到下一次 Pick 中点为下一对象的 topick；末次 Place 后标为 terminal，不参与分阶段增强。边界统一使用左闭右开区间，边界帧归入新阶段。segment.id 使用 operation_id + phase，segment.object 必须逐字匹配该 episode 实例对象表中的规范名。
+     4. 将逐帧 segment 与对象实例标签写入 episode 标注 sidecar，转换时与 RGB 使用同一帧选择、裁剪及缩放记录；构建 EmixIndex 时给每个 member 写入其源帧的 segment。开启 segment_wise 后仅保留两成员的 segment.id 和 object 完全相同的组；旧索引缺少 segment 时直接拒绝，须重建索引。
+     5. 每个任务至少人工核对所有开合事件边界及其前后帧、操作对象掩码是否非空、Patch/Mix 是否只修改目标对象像素，以及 terminal/无效 episode 是否被排除。全部任务标注与索引验收后，才把 segment_wise.enable 设为 true。
+   - 不开发通用阶段分类器；固定阶段规则按任务维护，共用标注存储、索引字段、读取和对象掩码代码。segment_wise 开启后应与 detect_overlap 配合运行，后者检查当前 segment object 的两张掩码；候选替换必须仍满足相同 segment.id/object。
 
 4. **任务扩展：push / pull / open / close 多物体任务**
    - 目前仅有 pick 和 place 两类任务，扩展到 push、pull、open、close 等多物体任务类型。

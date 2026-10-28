@@ -140,11 +140,16 @@ class EmixGroupMemberRef:
     source_dataset_repo_id: str
     source_episode_index: int
     source_frame_index: int
+    segment: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         self.source_dataset_repo_id = str(self.source_dataset_repo_id)
         self.source_episode_index = int(self.source_episode_index)
         self.source_frame_index = int(self.source_frame_index)
+        if self.segment is not None:
+            self.segment = {str(key): str(value) for key, value in self.segment.items()}
+            if not self.segment.get("id") or not self.segment.get("object"):
+                raise ValueError("segment metadata requires nonempty id and object")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

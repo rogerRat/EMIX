@@ -134,3 +134,13 @@ def apply_emix_schema(policy_cfg: Any, emix_payload: dict[str, Any]) -> None:
         raise ValueError("emix.mixup.detect_overlap.enable requires image_mode=patch")
     policy_cfg.detect_overlap_enable = overlap_enable
     policy_cfg.detect_overlap_refuse_ratio = overlap_ratio
+
+    segment_payload = mixup_payload.get("segment_wise") or {}
+    if not isinstance(segment_payload, dict):
+        raise ValueError("emix.mixup.segment_wise must be a mapping when present")
+    segment_enable = segment_payload.get("enable", False)
+    if not isinstance(segment_enable, bool):
+        raise ValueError("emix.mixup.segment_wise.enable must be a boolean")
+    if segment_enable and not annotation_root:
+        raise ValueError("emix.mixup.segment_wise.enable requires annotation_root")
+    policy_cfg.segment_wise_enable = segment_enable
