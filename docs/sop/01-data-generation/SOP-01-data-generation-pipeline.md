@@ -189,7 +189,7 @@ third_party/RoboTwin/task_config/place_object_scale_left.yml
 # Environment: emix-twin
 python data_collection/robotwin.py place_object_scale_left \
   --task-config place_object_scale_left \
-  --cuda 0
+  --cuda 0 --episodes 300
 ```
 
 `--task-config` 可以省略；省略时自动使用与 task 同名的配置。若使用自定义
@@ -203,6 +203,7 @@ python data_collection/robotwin.py place_object_scale_left \
 | `python data_collection/robotwin.py` | Python 入口 | 仓库根目录 | 校验任务、调用 RoboTwin 并移动输出 |
 | `--task-config` | 可选参数 | `place_object_scale_left` | task config 文件名，不含 `.yml` 后缀 |
 | `--cuda` | 可选参数 | `0` | 设置 `CUDA_VISIBLE_DEVICES` |
+| `--episodes` | 可选参数 | `300`（默认） | 设置目标成功 episode 数，并覆盖 RoboTwin 模板值 |
 | `--python` | 可选参数 | 当前 Python | 指定 RoboTwin 使用的 Python 可执行文件 |
 | `--dry-run` | flag | - | 只打印命令和路径，不启动采集 |
 

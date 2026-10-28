@@ -1,3 +1,20 @@
+最后修改：2026-10-22
+
+## 2026-10-22 12:34 CST：Patch 第二次 BUG 批次作废并重启
+
+本批曾将 B 图的 `labels != 0` 当作“全部非背景物体”。真实标注中的桌面、地面与机器人等场景像素也是非零；十任务 episode 0 的抽查帧均为 100% 非零，因此 Patch 近似整张 B 图，不能作为有效拼贴实验。2026-10-22 02:26 开始的正式批次已停止，整个批次标记为 BUG 错误结果。完整 100-episode 数字仅供识别：`place_bread_skillet_left_oppo_cam` vanilla/mix/错误 Patch 为 85/95/94；`place_can_basket_left_oppo_cam` vanilla 为 50。第二任务 mix 仅训练到约 19,355/30,000 步。简要记录见 `docs/results/20261022-sin-v0-patch-scene-background-bug-invalid-run.md`，不得用于方法比较。
+
+最新提交 `5fc08ec` 按实例名称选择任务物体，排除场景表面与机器人；十任务样本帧的新掩码面积约 0.7%–6.6%，均同时含拼贴物体与保留的 A 图背景。相关 9 项测试通过。旧 checkpoint 与评估产物清理后，使用原 `sin-v0-patch` / `261020` 协议、原训练数据与索引，从首任务重新训练三臂。旧巡检关闭，建立新版半小时巡检。下方 02:13 记录描述的是更早的单物体 BUG，已非当前实现。
+
+## 2026-10-22 02:13:08 CST
+**Patch 拼贴的目标范围与遮挡关系问题（已观察，尚未修复）**
+
+**准确版本（基于当前工作树）：**每个 episode 的任务通过 `patch_target_actor()` 固定返回一个 actor。采集端按该 actor 的 `per_scene_id` 生成 `patch_target` 实例标签。训练加载器以配对 member 0 的图像为 A（底图），member 1 的图像为 B（来源图），根据 B 的源帧读取掩码 `mask_B = labels_B == patch_target`，然后执行 `image_out = torch.where(mask_B, image_B, image_A)`。因此只复制 B 中这个 actor 当前可见的像素；其他非背景物体及目标 actor 被遮挡的像素均不在掩码中。掩码内 B 直接覆盖 A 的同坐标像素，没有跨图深度比较、遮挡顺序判断或物体完整形状重建；交换 A/B 会改变结果。代码位置：`third_party/RoboTwin/envs/_base_task.py:get_instance_object_map`、`embodied_mixup/policies/utils/patch_annotations.py:target_mask`、`embodied_mixup/policies/utils/emix_loader_registry_utils.py:__getitem__/hard_patch_image`。
+
+**简单直觉版本：**先选定 B 图里的一个物体，只把它露在画面中的部分剪出来，在原位置盖到 A 图上。不会把 B 中所有物体都剪来，也不会判断 A 中已有物体是否应该挡在它前面。谁作为底图、谁提供剪下的像素，会影响结果。
+
+**对应观察：**有些物体或物体区域没有被拼上；拼上的目标像素又可能盖住 A 中其他物体。边缘差异还可能来自 RGB 双线性缩放与实例标签最近邻缩放。若目标 actor 的大块可见区域缺失，仍需核对该帧实例标签才能定位具体原因。
+
 ## 0916
 **消融套件三批正式归档(SOP-06):过滤消融全部持平,默认构建仍最优**
 

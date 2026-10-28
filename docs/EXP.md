@@ -1,6 +1,6 @@
 # 实验协议真相文档（_exp.md）
 
-更新：2026-10-20（sin-v0；patch 链路代码已接入，真实仿真 ID 对齐验证待安装环境空闲后执行）。**本文档是当前项目实验的唯一认证来源和实施记录**：实验命名、固定条件、运行顺序和状态的唯一权威入口。YAML 是协议的可执行表示；TODEV 是开发清单，SOP 是操作说明，归档 SUMMARY 是历史证据。
+更新：2026-10-25 13:33 CST（sin-v0；当前执行进度见 2.6）。**本文档是当前项目实验的唯一认证来源和实施记录**：实验命名、固定条件、运行顺序和状态的唯一权威入口。YAML 是协议的可执行表示；TODEV 是开发清单，SOP 是操作说明，归档 SUMMARY 是历史证据。
 
 文档结构：第一部分为 **sin-v0 现行标准**，记录当前探索目标及正在执行的协议；第二部分为 **过去标准和历史记录**，保留旧 V0 参数、运行记录和历史决策。
 
@@ -17,7 +17,7 @@
 | 顺序 | sin-v0 实验 | 研究问题 | 状态 / 当前结论 |
 |---:|---|---|---|
 | 1 | `sin-v0-noise` | 显式高斯图像噪声是否改善 EMIX | **已完成**；结果未显示 EMIX 在该噪声实验中有提升（按最新实验结论）。历史配置和旧状态快照见第二部分，不再作为待执行计划。 |
-| 2 | `sin-v0-patch` | 把 EMIX 的线性透明度混合替换为对象掩码硬拼贴，是否改善结果 | **当前实验；协议已登记，训练尚未启动**。 |
+| 2 | `sin-v0-patch` | 把 EMIX 的线性透明度混合替换为对象掩码硬拼贴，是否改善结果 | **当前实验；前两次运行因掩码 BUG 作废，按最新提交重新正式运行**。 |
 | 3 | `sin-v0-regime` | 按 pick/place 阶段和当前目标物体选择增强对象，是否改善结果 | 后续实验；依赖逐帧阶段标签及 patch 数据链路。 |
 | 4 | `sin-v0-task-expansion` | 将方法扩展到 push/pull/open/close 多物体任务 | 后续方向；待前述阶段增强验证后规划。 |
 
@@ -33,7 +33,9 @@
 |---|---|---|---|
 | `vanilla` | 无 EMIX；输入原始观测 | 无 | 普通 DP 对照 |
 | `mix` | 现行 EMIX 像素级线性透明度叠加 | 现行 EMIX 配对、状态锚定和双动作监督 | 现行方法对照 |
-| `patch` | 以 A 图为底图，将 B 图中指定目标对象的可见像素按实例掩码硬覆盖 | 与 `mix` 共用配对、锚定状态和两路动作目标 | 新方法 |
+| `patch` | 以 A 图为底图，将 B 图中所有任务物体的可见像素（排除场景背景和机器人部件）按实例掩码硬覆盖 | 与 `mix` 共用配对、锚定状态和两路动作目标 | 新方法 |
+
+**Patch 与 regime 的边界：**当前 `sin-v0-patch` 以 A 图为底，只复制 B 图中所有任务物体的可见像素。标注里的 `background`（标签 0）之外，桌面、地面、墙、相机和机器人部件也有非零实例标签；这些都是场景背景，必须排除。不能仅用 `labels != 0`，也不能只用 `patch_target` 单物体角色。任务物体由实例名称规则识别，使用同一帧的真实渲染标签。`sin-v0-regime` 才允许按预先定义的 pick/place 阶段和目标对象规则选定一个要操作的物体；不能随机或随意挑选。
 
 `patch` 的两路去噪损失直接相加：`L = L_A + L_B`。不按混合面积或透明度重新配权，也不除以 2。增强批次的抽样/退火概率沿用当前 EMIX 计划：logarithmic，`0.6 → 0.0`；`patch` 不采样线性混合的透明度 alpha。`mix` 保持现行 EMIX 实现的 Beta(2,2) 透明度及现有损失计算。
 
@@ -55,7 +57,7 @@
 - 每任务 300 条成功专家轨迹，采集 17 FPS；训练图像 84×84 RGB；评估每条件 100 个 episode，evaluation seed 0。使用与 `configs/scripts/run.yaml` 相同的任务随机化、采集配置和软件版本；本实验运行配置将 `pipeline.episodes_per_task` 固定为 `300`，其余采集配置保持一致，并记录实际 RoboTwin/task 代码 commit。
 - 三组必须使用相同的 RGB、左臂 7 维状态、左臂 7 维动作和训练/评估数据。原始 RoboTwin HDF5 保留的双臂原生向量仅用于固定右臂验收；转换后的策略数据不含右臂状态或动作。patch 另需与每帧、每 episode 对齐的无损实例归属图及任务对象角色表；`mix` 和 `vanilla` 也从同一份数据读取 RGB/状态/动作，只是不读取实例掩码。
 - 现有旧 RGB 数据不能仅凭 task/seed 推定恢复精确实例掩码。需通过带实例 ID 的采集路径产生配对数据；若要复用旧数据，必须先完成逐帧重放一致性验证并确认 RGB、状态、动作与掩码时间对齐。未满足前置条件时不启动正式训练。
-- 三组共用同一份 EMIX 候选索引；vanilla 不消费候选索引。拼贴对象按每个任务登记的逻辑角色选择，使用渲染实例掩码，不从资产编号推测渲染 ID。归属图无损保存，不能使用 JPEG。
+- 三组共用同一份 EMIX 候选索引；vanilla 不消费候选索引。Patch 将 B 图中全部任务物体实例标签合并为一个掩码，排除场景表面及机器人部件，不按任务角色筛选单个物体；regime 后续实验才按任务、阶段及对象角色选择特定物体。使用渲染实例掩码，不从资产编号推测渲染 ID。归属图无损保存，不能使用 JPEG。
 
 ### 2.3 固定训练与评估参数
 
@@ -67,7 +69,7 @@
 | 噪声增强 | 关闭；`image_noise.enabled=false` |
 | 训练 seed / steps / batch | `0` / `30000` / `64` |
 | DataLoader | `num_workers=16` |
-| checkpoint / log 保存频率 | 每 5000 steps / 每 100 steps；最终评估使用 30000-step checkpoint |
+| checkpoint / log 保存频率 | checkpoint 每 5000 steps / log 每 100 steps；训练中仅最新完整 checkpoint 保留优化器状态，最终评估使用 30000-step checkpoint |
 | Backbone | ResNet18，ImageNet `ResNet18_Weights.IMAGENET1K_V1` |
 | 优化器 / LR scheduler | Adam，lr `1e-4`，betas `(0.95, 0.999)`，eps `1e-8`，weight decay `1e-6`，grad clip norm `10`；cosine LR，warmup `500` steps |
 | 策略时序 | horizon `16`，`n_obs_steps=1`，`n_action_steps=8` |
@@ -86,7 +88,14 @@
 
 ### 2.4 实验矩阵与产物
 
-共 10 个任务 × 3 个处理臂 = 30 个独立训练实例。每格都产出最终 30000-step checkpoint 的 100-episode 评估、metrics、运行配置和摘要；每 5000-step checkpoint 只在训练/评估期间按需保留，归档时删除全部 checkpoint。
+#### Checkpoint 与恢复保留规则（默认）
+
+- 训练期间，每 5000 steps 仍保存 checkpoint 模型权重及恢复元数据；优化器状态只保留在**最新完整 checkpoint**中。每次新 checkpoint 成功写完并更新 `checkpoints/last` 后，删除其它编号 checkpoint 的 `training_state/optimizer_state.safetensors`，保留目录、模型权重及其他元数据。
+- 中断恢复只从 `checkpoints/last` 指向的最新完整暂存点继续；不从更旧的编号 checkpoint 回滚。若 `last` 不存在或不完整，不把更旧点当作恢复点。未完成的 checkpoint 不算完整暂存点。
+- 最终 checkpoint 完成评估并写出与该 checkpoint 匹配、episode 数完整的 metrics 后，删除该策略所有编号 checkpoint 下的 `pretrained_model/model.safetensors` 与 `training_state/optimizer_state.safetensors`；保留 checkpoint 文件夹、配置、训练步数、scheduler/RNG 等非权重元数据及评估结果。未完成评估的策略不得按此规则清除模型权重。
+- 此规则适用于当前批次及后续所有实验；任何清理都只删具体 tensor 文件，不删 checkpoint 目录。
+
+共 10 个任务 × 3 个处理臂 = 30 个独立训练实例。每格都产出最终 30000-step checkpoint 的 100-episode 评估、metrics、运行配置和摘要；训练期间保留每 5000-step checkpoint 的目录和模型权重，仅保留最新完整点的优化器状态；评估完成后按上述规则删除该策略全部模型权重与优化器状态，归档时删除全部 checkpoint。
 
 | 任务 | vanilla | mix | patch |
 |---|---|---|---|
@@ -107,15 +116,20 @@
 
 1. 在 `ssh emix` 远端确认环境安装完成、可用 GPU/磁盘空间及现有任务进程；安装期间只准备代码和文档，不启动训练或修改安装进程。
 2. 将仿真实例 ID、对象角色表和 RGB 同步接入采集；选定任务验证分割 ID 对应，包含大于 255 的原始 ID；验证 episode/frame 对齐及实例图无损落盘。
-3. 为十任务逐个登记拼贴的目标对象角色规则，并生成/验证 84×84 同步转换后的实例标注；建立三臂共同使用的 EMIX 索引。
-4. 接通 annotation reader、硬拼贴数据变换与 patch 双分支 `L_A + L_B` loss。对每个处理臂生成解析配置，核查除协议处理变量外完全一致。
-5. 做边界帧、掩码外像素不变、目标物体正确、两路损失直接相加且未除以 2 等小批量通路验收；验收不通过不启动正式批次。
-6. 按矩阵逐任务训练三臂，保存训练日志和配置快照，评估最终 checkpoint，并记录成功率及每个评估 episode seed。
-7. 汇总三臂逐任务与十任务宏平均结果；按 archive 规则抽留评估视频、删除 checkpoints、保存非大文件与 `SUMMARY.md`。
+3. 为十任务验证任务物体实例归属及场景背景标签，并生成/验证 84×84 同步转换后的实例标注；建立三臂共同使用的 EMIX 索引。
+4. 每个任务的数据转换及索引建立完成后，立即生成并检查三种可视化，再进入训练：交点分布（HTML+PNG）、全部 episode 第一帧占据范围（PNG）、夹爪 pick/place 动作点（HTML+PNG）。统一写入项目 `outputs/assets_vis/{intersections,first_frame,pick_place}/`，索引图只读取已完成的索引，不重建索引；三类产物缺任一项都视为该任务数据处理未完成，不得开始训练。十任务批次须在任何任务开训前完成并核验全部三类可视化。
+5. 接通 annotation reader、硬拼贴数据变换与 patch 双分支 `L_A + L_B` loss。对每个处理臂生成解析配置，核查除协议处理变量外完全一致。
+6. 做边界帧、所有任务物体实例均被拼贴、场景背景像素保持 A 图、两路损失直接相加且未除以 2 等小批量通路验收；验收不通过不启动正式批次。
+7. 按矩阵逐任务训练三臂，保存训练日志和配置快照，评估最终 checkpoint，并记录成功率及每个评估 episode seed。
+8. 汇总三臂逐任务与十任务宏平均结果；按 archive 规则抽留评估视频、删除 checkpoints、保存非大文件与 `SUMMARY.md`。
 
 ### 2.6 当前执行状态
 
-状态：**协议已登记；采集、无损标注转换、patch 加载与双分支求和代码已接入并通过 CPU 单测；left_oppo_cam 右臂移出视野/固定与 7 维策略输入输出已接入；真实 actor ID 对齐验收与带标注数据准备待执行；正式训练未启动。** 当前通用实例标注模块已接入采集、转换与 patch 训练代码；CPU 单测不能替代真实渲染后端的 actor ID 对齐验收。远端当前 checkout 未发现 `archive/`、`data/` 或 `outputs/` 目录，因此训练数据和旧 checkpoint 当前不可从这些路径复用；环境安装/数据挂载就绪后需重新核验。
+2026-10-22 12:34 CST：第二次正式运行因 `labels != 0` 将场景背景也拼贴的 BUG 整体作废，简要结果见 `docs/results/20261022-sin-v0-patch-scene-background-bug-invalid-run.md`。更早的单物体 BUG 运行见 `docs/results/20261022-sin-v0-patch-bug-invalid-run.md`。两批均不得用于方法比较；旧 checkpoint 和评估产物已删除，训练数据、标注与索引保留。
+
+按最新提交 `5fc08ec` 从首任务重新执行正式 `train-eval`，实验名仍为 `sin-v0-patch`、协议时间戳仍为 `261020`。十任务、三臂及其他固定参数不变。新版巡检由根目录 `PATROL.md` 指引，每 30 分钟执行一次。
+
+2026-10-25 13:33 CST：burger-fries EMIX 曾在全局 step 约 27,397 因 DataLoader ancdata/worker IPC 错误中断；最新完整恢复点为 025000。按原配置从该点恢复，运行 shell 的文件描述符软限额提高至 65535；五分钟内训练到 30000 并进入 100-episode 评估，当前评估尚无完整 metrics。根因待进一步观察，不能仅据限额提高后未复现就定论。
 
 ---
 
