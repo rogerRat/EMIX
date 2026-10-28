@@ -19,7 +19,10 @@ def resolve_project_output_path(path: str | Path, *, field: str) -> Path:
     try:
         resolved.relative_to(PROJECT_OUTPUTS_ROOT)
     except ValueError as error:
-        raise ValueError(f"{field} must be under the project outputs/ directory: {path}") from error
+        raise ValueError(
+            f"{field} must be under the project outputs directory "
+            f"({PROJECT_OUTPUTS_ROOT}): {path}"
+        ) from error
     return resolved
 
 

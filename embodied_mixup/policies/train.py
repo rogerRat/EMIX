@@ -676,12 +676,31 @@ def _write_train_config_snapshot(cfg: EmixTrainConfig) -> Path:
     return snapshot_path
 
 
-def _prepare_output_dir(output_dir: Path) -> Path:
+def _prepare_output_dir(output_dir: Path, *, allow_existing: bool = False) -> Path:
     output_dir = output_dir.expanduser().resolve()
-    if output_dir.exists() and any(output_dir.iterdir()):
+    if output_dir.exists() and any(output_dir.iterdir()) and not allow_existing:
         raise FileExistsError(f"Output directory already exists and is not empty: {output_dir}")
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
+
+
+def _prune_optimizer_states(output_dir: Path, keep_checkpoint: Path) -> int:
+    """Keep optimizer state only for the newest complete/resumable checkpoint."""
+    checkpoint_root = output_dir / "checkpoints"
+    if not checkpoint_root.is_dir():
+        return 0
+    keep_checkpoint = keep_checkpoint.resolve()
+    removed = 0
+    for step_dir in checkpoint_root.iterdir():
+        if not step_dir.is_dir() or not step_dir.name.isdigit():
+            continue
+        optimizer_state = step_dir / "training_state" / "optimizer_state.safetensors"
+        if step_dir.resolve() != keep_checkpoint and optimizer_state.is_file() and not optimizer_state.is_symlink():
+            optimizer_state.unlink()
+            removed += 1
+    if removed:
+        LOGGER.info("[checkpoint] pruned %d stale optimizer state(s); kept=%s", removed, keep_checkpoint)
+    return removed
 
 
 def _build_resume_config(args: argparse.Namespace) -> ResumeConfig:
@@ -780,7 +799,7 @@ def train(
         resume_cfg.output_dir_override,
         vis_n_obs_steps=vis_n_obs_steps,
     )
-    cfg.output_dir = _prepare_output_dir(cfg.output_dir)
+    cfg.output_dir = _prepare_output_dir(cfg.output_dir, allow_existing=resume_cfg.resume_from is not None)
     snapshot_path = _write_train_config_snapshot(cfg)
     set_global_seed(resume_cfg.seed)
 
@@ -840,7 +859,25 @@ def train(
 
     if resume_cfg.resume_from is not None:
         resolved_checkpoint = resolve_checkpoint_dir(resume_cfg.resume_from)
+        latest_link = resolved_checkpoint.parent / "last"
+        if not latest_link.is_symlink() or latest_link.resolve() != resolved_checkpoint:
+            raise ValueError(
+                f"Only the latest checkpoint referenced by {latest_link} can be resumed; "
+                f"requested {resolved_checkpoint}"
+            )
+        required_resume_files = (
+            resolved_checkpoint / "pretrained_model" / "model.safetensors",
+            resolved_checkpoint / "training_state" / "optimizer_state.safetensors",
+            resolved_checkpoint / "training_state" / "rng_state.safetensors",
+            resolved_checkpoint / "training_state" / "training_step.json",
+        )
+        missing_resume_files = [str(path) for path in required_resume_files if not path.is_file()]
+        if missing_resume_files:
+            raise FileNotFoundError(
+                "Latest checkpoint is incomplete and cannot be resumed: " + ", ".join(missing_resume_files)
+            )
         loaded_state = load_train_state(resolved_checkpoint, policy, optimizer, lr_scheduler, device)
+        _prune_optimizer_states(cfg.output_dir, resolved_checkpoint)
         if resume_cfg.start_step is None:
             start_step = infer_start_step(resolved_checkpoint, fallback=start_step)
         loaded_state["resolved_checkpoint"] = str(resolved_checkpoint)
@@ -947,6 +984,7 @@ def train(
                     scheduler=lr_scheduler,
                 )
                 update_last_checkpoint(checkpoint_dir)
+                _prune_optimizer_states(cfg.output_dir, checkpoint_dir)
                 LOGGER.info("[checkpoint] saved=%s", checkpoint_dir)
 
     elif cfg.training_mode == "emix":
@@ -1003,6 +1041,7 @@ def train(
                     scheduler=lr_scheduler,
                 )
                 update_last_checkpoint(checkpoint_dir)
+                _prune_optimizer_states(cfg.output_dir, checkpoint_dir)
                 LOGGER.info("[checkpoint] saved=%s", checkpoint_dir)
 
     else:
@@ -1056,6 +1095,7 @@ def train(
                     scheduler=lr_scheduler,
                 )
                 update_last_checkpoint(checkpoint_dir)
+                _prune_optimizer_states(cfg.output_dir, checkpoint_dir)
                 LOGGER.info("[checkpoint] saved=%s", checkpoint_dir)
 
     return cfg.output_dir

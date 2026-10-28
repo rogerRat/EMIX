@@ -13,9 +13,9 @@ Resume behavior (simplest form, no strict validation):
 
       * a train stage is skipped when its final checkpoint exists
         (``outputs/train/<task>_dp_<kind>/checkpoints/<steps:06d>/pretrained_model/model.safetensors``);
-      * an eval stage is skipped when ``metrics.json`` exists under
-        ``outputs/eval/<task>_dp_<kind>`` AND that training checkpoint still
-        exists (otherwise the metrics are stale and get re-run).
+      * an eval stage is skipped when a complete ``metrics.json`` matches the
+        final checkpoint metadata; model and optimizer tensor files may have
+        been pruned after evaluation.
 
     An *incomplete* artifact is removed first so the stage can restart cleanly
     (``train.py`` refuses a non-empty output_dir with ``FileExistsError``).
@@ -800,12 +800,12 @@ def run_prepare_task(
     # dataset (e.g. restored from an archive) must not trigger a re-collection
     # just because the raw hdf5 collections are not on disk.
     if not dataset_ready and not collection_ready:
-        collect_args = ["python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu]
+        collect_args = ["python", "data_collection/robotwin.py", task, "--task-config", task, "--cuda", gpu, "--episodes", str(episodes)]
         if pipeline.get("instance_annotations", False):
             collect_args.append("--instance-annotations")
         stages.append(("collect", conda_command(config, "robotwin", gpu, *collect_args)))
     if not dataset_ready:
-        convert_args = ["python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"])]
+        convert_args = ["python", "data_processing/convert_to_lerobot.py", "--src", str(collection), "--tgt", str(dataset), "--repo-id", task, "--task", task, "--image-width", str(pipeline["image_width"]), "--image-height", str(pipeline["image_height"]), "--fps", str(pipeline["collection_fps"]), "--left-qpos-dim", str(pipeline["left_qpos_dim"])]
         if pipeline.get("instance_annotations", False):
             convert_args.append("--instance-annotations")
         stages.append(("convert-84x84", conda_command(config, "preprocessing", gpu, *convert_args)))
@@ -822,6 +822,16 @@ def run_prepare_task(
         print(f"[flow] GPU {gpu}: task {task_index}/{task_total} | stage {stage_index}/{len(stages)}: {stage_name}", flush=True)
         try:
             run(command, gpu=gpu, log=log, config=config)
+            if stage_name == "collect":
+                # RoboTwin writes to ROOT/data/robotwin despite a configured root.
+                collector_output = ROOT / "data" / "robotwin" / task / task
+                if collector_output.exists() and collector_output.resolve() != collection.resolve():
+                    if collection.exists():
+                        raise FileExistsError(f"Refusing to overwrite {collection} with {collector_output}")
+                    collection.parent.mkdir(parents=True, exist_ok=True)
+                    log.write(f"[flow] relocating RoboTwin collection: {collector_output} -> {collection}\n")
+                    shutil.move(str(collector_output), str(collection))
+                    log.write(f"[flow] relocated RoboTwin collection: {collection}\n")
         except BaseException:
             if stage_name == "collect":
                 remove_artifact(collection, "failed RoboTwin collection", log)
@@ -948,8 +958,17 @@ def final_checkpoint_dir(task: str, config: dict[str, Any], *, emix: bool, patch
 
 
 def completed_training(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> bool:
-    """Return whether training produced its final checkpoint (simplest check)."""
-    return (final_checkpoint_dir(task, config, emix=emix, patch=patch) / "model.safetensors").is_file()
+    """Return whether the final checkpoint exists or was evaluated then pruned."""
+    checkpoint = final_checkpoint_dir(task, config, emix=emix, patch=patch)
+    if (checkpoint / "model.safetensors").is_file():
+        return True
+    # A matching completed evaluation is durable evidence that training finished;
+    # its model weights may have been removed by the post-evaluation cleanup.
+    return (
+        (checkpoint / "config.json").is_file()
+        and (checkpoint / "train_config.json").is_file()
+        and completed_evaluation(task, config, emix=emix, patch=patch)
+    )
 
 
 def eval_output_dir(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> Path:
@@ -959,8 +978,18 @@ def eval_output_dir(task: str, config: dict[str, Any], *, emix: bool, patch: boo
 
 
 def completed_evaluation(task: str, config: dict[str, Any], *, emix: bool, patch: bool = False) -> bool:
-    """Return whether evaluation wrote a metrics.json (simplest check)."""
-    return any(eval_output_dir(task, config, emix=emix, patch=patch).glob("*/metrics.json"))
+    """Return whether metrics confirm a complete eval of this final checkpoint."""
+    expected_checkpoint = final_checkpoint_dir(task, config, emix=emix, patch=patch).resolve()
+    expected_episodes = int(require_mapping(config, "pipeline")["evaluation_episodes"])
+    for metrics_path in eval_output_dir(task, config, emix=emix, patch=patch).glob("*/metrics.json"):
+        try:
+            payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+            recorded_checkpoint = Path(payload.get("checkpoint", "")).resolve()
+            if recorded_checkpoint == expected_checkpoint and int(payload.get("episodes", 0)) == expected_episodes:
+                return True
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+    return False
 
 
 def selected_policies(config: dict[str, Any]) -> list[tuple[str, bool]]:
@@ -1013,17 +1042,32 @@ def run_training_task(
             print(message, end="", flush=True)
         else:
             incomplete_train = train_output_dir(task, config, emix=emix, patch=patch)
+            resume_from = None
             if incomplete_train.exists():
-                remove_artifact(incomplete_train, f"incomplete {kind} training", log)
+                last_checkpoint = incomplete_train / "checkpoints" / "last"
+                if last_checkpoint.is_dir():
+                    candidate = last_checkpoint.resolve()
+                    required_state = (
+                        candidate / "pretrained_model" / "model.safetensors",
+                        candidate / "training_state" / "optimizer_state.safetensors",
+                        candidate / "training_state" / "rng_state.safetensors",
+                        candidate / "training_state" / "training_step.json",
+                    )
+                    if all(path.is_file() for path in required_state):
+                        resume_from = candidate
+                        message = f"[flow] train-eval / GPU {gpu}: resuming incomplete {kind} training from {candidate}\n"
+                        log.write(message)
+                        print(message, end="", flush=True)
+                if resume_from is None:
+                    remove_artifact(incomplete_train, f"incomplete {kind} training without a complete last checkpoint", log)
+            train_args = [
+                "python", "train/train.py", "--config", str(configs[f"{kind}_train"]),
+                "--seed", str(require_mapping(config, "training")["seed"]),
+            ]
+            if resume_from is not None:
+                train_args.extend(["--resume_from", str(resume_from)])
             stages.append(
-                (
-                    f"{kind}-train",
-                    conda_command(
-                        config, "training", gpu, "python", "train/train.py",
-                        "--config", str(configs[f"{kind}_train"]),
-                        "--seed", str(require_mapping(config, "training")["seed"]),
-                    ),
-                )
+                (f"{kind}-train", conda_command(config, "training", gpu, *train_args))
             )
         # Evaluation output is only reusable while the checkpoint it evaluates
         # still exists; otherwise the metrics are stale and get re-run.
@@ -1047,6 +1091,34 @@ def run_training_task(
     for stage_index, (stage_name, command) in enumerate(stages, start=1):
         print(f"[flow] GPU {gpu}: task {task_index}/{task_total} | stage {stage_index}/{len(stages)}: {stage_name}", flush=True)
         run(command, gpu=gpu, log=log, config=config)
+        if stage_name.endswith("-eval"):
+            kind = stage_name[:-len("-eval")]
+            patch = kind == "patch"
+            emix = kind in ("emix", "patch")
+            if not completed_evaluation(task, config, emix=emix, patch=patch):
+                raise RuntimeError(f"{kind} evaluation exited successfully without complete matching metrics for {task}")
+            checkpoint_root = train_output_dir(task, config, emix=emix, patch=patch) / "checkpoints"
+            removed_bytes = 0
+            removed_files = 0
+            for step_dir in checkpoint_root.iterdir():
+                if not step_dir.is_dir() or not step_dir.name.isdigit():
+                    continue
+                for relative in (
+                    Path("pretrained_model/model.safetensors"),
+                    Path("training_state/optimizer_state.safetensors"),
+                ):
+                    tensor_file = step_dir / relative
+                    if tensor_file.is_file() and not tensor_file.is_symlink():
+                        size = tensor_file.stat().st_size
+                        tensor_file.unlink()
+                        removed_bytes += size
+                        removed_files += 1
+            message = (
+                f"[flow] removed {removed_files} evaluated checkpoint model/optimizer files "
+                f"for {task}/{kind} ({removed_bytes} bytes); checkpoint directories and metadata retained\n"
+            )
+            log.write(message)
+            print(message, end="", flush=True)
     print(f"[flow] train-eval / GPU {gpu}: task {task_index}/{task_total} completed: {task}", flush=True)
 
 
@@ -1372,7 +1444,7 @@ def main() -> None:
     log_root = configured_path(config, "log_root")
     lock_name = ".flow-cuda-" + "-".join(cuda) + ".lock"
     with flow_lock(log_root / lock_name):
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         log_directory = log_root / f"flow-{timestamp}-cuda-{'-'.join(cuda)}"
         log_directory.mkdir(parents=True, exist_ok=False)
         print(f"[flow] logs: {log_directory}", flush=True)
