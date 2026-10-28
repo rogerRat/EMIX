@@ -190,7 +190,7 @@ def main() -> int:
                         default="cen_arm_right_wide_cam",
                         help="centred-arm camera variant selecting the task suffix")
     parser.add_argument("--gpus", nargs="+", default=["0"])
-    parser.add_argument("--episodes", type=int, default=5)
+    parser.add_argument("--episodes", type=int, default=300)
     parser.add_argument("--stages", nargs="+", choices=ALL_STAGES, default=list(ALL_STAGES))
     parser.add_argument("--image-width", type=int, default=224)
     parser.add_argument("--image-height", type=int, default=224)

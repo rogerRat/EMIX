@@ -84,7 +84,7 @@ require_eval_step_limit
 
 if is_forced collect || ! collection_is_complete; then
   echo "[1/13] Collecting ${EXPECTED_DATASET_EPISODES} opposite-camera episodes"
-  run "${RUN_COLLECT[@]}" "${TASK}" --task-config "${COLLECTION_CONFIG}" --cuda "${CUDA_DEVICE}"
+  run "${RUN_COLLECT[@]}" "${TASK}" --task-config "${COLLECTION_CONFIG}" --cuda "${CUDA_DEVICE}" --episodes "${EXPECTED_DATASET_EPISODES}"
 else
   echo "[1/13] Collection already complete; skipping"
 fi

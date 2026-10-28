@@ -21,6 +21,7 @@ ROOT="/home/rogerspyke/projects/EMIX/Embodied-Mixup"
 cd "$ROOT" || exit 1
 
 EMIX_TWIN="/home/rogerspyke/miniforge3/envs/emix-twin/bin/python"
+EPISODES="${EPISODES:-300}"
 EMIX="/home/rogerspyke/miniforge3/envs/emix/bin/python"
 MARKERS="$ROOT/logs/serial_pipeline"
 COLLECTION_ROOT="$ROOT/data/robotwin"
@@ -78,7 +79,7 @@ for task in "${TASKS[@]}"; do
         else
             log "  collect: running (GPU 0 / 4070, emix-twin)..."
             "$EMIX_TWIN" data_collection/robotwin.py "${task}_left" \
-                --task-config "${task}_left" --python "$EMIX_TWIN" --cuda 0 \
+                --task-config "${task}_left" --python "$EMIX_TWIN" --cuda 0 --episodes "$EPISODES" \
             || { log "  FAIL: collect $task"; exit 1; }
             mark_done "$task.collect"
         fi

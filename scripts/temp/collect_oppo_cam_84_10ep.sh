@@ -19,7 +19,7 @@ LEROBOT_ROOT="data/lerobot/${DATASET_ID}"
 rm -rf data outputs
 
 conda run --no-capture-output -n "${EVAL_ENV}" python data_collection/robotwin.py \
-  "${TASK}" --task-config "${COLLECTION_CONFIG}" --cuda "${CUDA_DEVICE}"
+  "${TASK}" --task-config "${COLLECTION_CONFIG}" --cuda "${CUDA_DEVICE}" --episodes 10
 
 conda run --no-capture-output -n "${TRAIN_ENV}" python data_processing/convert_to_lerobot.py \
   --src "${COLLECTION_ROOT}" --tgt "${LEROBOT_ROOT}" --repo-id "${DATASET_ID}" \

@@ -4,7 +4,7 @@
 # toolchain (conda-installed) so curobo's JIT extensions build for compute_120,
 # and conda's gcc 15.2 as the host compiler.
 #
-# Usage: source scripts/temp/emix_5060_env.sh && python data_collection/robotwin.py ...
+# Usage: source scripts/temp/emix_5060_env.sh && python data_collection/robotwin.py ... --episodes 300
 PROJ=/home/rogerspyke/projects/EMIX/Embodied-Mixup
 EB=/home/rogerspyke/miniforge3/envs/emix
 export CUDA_HOME="$EB"

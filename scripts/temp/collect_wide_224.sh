@@ -30,7 +30,7 @@ for i in "${!TASKS[@]}"; do
   echo "[$i] collecting ${task} on cuda:${gpu}"
   nohup conda run --no-capture-output -n emix-twin \
     python data_collection/robotwin.py "${task}" \
-    --task-config "${task}_10ep" --cuda "${gpu}" \
+    --task-config "${task}_10ep" --cuda "${gpu}" --episodes 10 \
     > "${LOG_DIR}/collect_${task}.log" 2>&1 &
   pids+=($!)
 done

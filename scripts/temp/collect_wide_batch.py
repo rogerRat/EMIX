@@ -34,7 +34,7 @@ TASKS = [
 def collect_one(task: str, gpu: int) -> int:
     cmd = [
         PYTHON, "data_collection/robotwin.py", task,
-        "--task-config", f"{task}_10ep", "--cuda", str(gpu),
+        "--task-config", f"{task}_10ep", "--cuda", str(gpu), "--episodes", "10",
     ]
     logf = (LOG_DIR / f"collect_{task}.log").open("w")
     print(f"[collect] {task} on cuda:{gpu}", flush=True)

@@ -147,7 +147,7 @@ def collect(
     task: str,
     *,
     task_config: str | None = None,
-    episodes: int | None = None,
+    episodes: int = 300,
     project_root: Path | None = None,
     python: str | None = None,
     cuda_visible_devices: str | None = None,
@@ -239,7 +239,7 @@ def _parser() -> argparse.ArgumentParser:
         help="RoboTwin config basename (default: same as TASK, without .yml)",
     )
     parser.add_argument(
-        "--episodes", type=int,
+        "--episodes", type=int, default=300,
         help="Collection target; rewrites episode_num in the task config "
              "(same rule as scripts/dataflow.sh --num)",
     )

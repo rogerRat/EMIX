@@ -10,7 +10,7 @@
 #   --task <name>   A v2 task family, either the base name (blocks_ranking_rgb)
 #                   or the full task name (blocks_ranking_rgb_left_central_wide_cam).
 #                   Must be one of the ten active families.
-#   --num  <n>      Number of episodes to collect (default: 500).  Written into
+#   --num  <n>      Number of episodes to collect (default: 300).  Written into
 #                   third_party/RoboTwin/task_config/left/<variant>/<task>.yml as
 #                   episode_num and used to gate the collection completeness check.
 #   --cuda <n>      CUDA device for the collect/convert stages (default: 0).
@@ -71,7 +71,7 @@ ACTIVE_FAMILIES=(
 )
 
 TASK=""
-NUM=500
+NUM=300
 CUDA_IDX=0
 SEED=""
 CAMERA="isometric"
@@ -214,7 +214,7 @@ else
     fi
     log "  collect: running (cuda $CUDA_IDX, emix-twin)..."
     "$EMIX_TWIN" data_collection/robotwin.py "$TASK_NAME" \
-        --task-config "$TASK_NAME" --python "$EMIX_TWIN" --cuda "$CUDA_IDX" \
+        --task-config "$TASK_NAME" --python "$EMIX_TWIN" --cuda "$CUDA_IDX" --episodes "$NUM" \
     || {
         log "  FAIL: collect $TASK_NAME"
         if [ -n "$SEED" ]; then

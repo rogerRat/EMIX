@@ -38,7 +38,7 @@ done | xargs -P "${PARALLEL}" -n 2 bash -c '
   task="$0"; gpu="$1"
   echo "[collect] ${task} on cuda:${gpu}"
   '"${PYTHON}"' data_collection/robotwin.py "${task}" \
-    --task-config "${task}_10ep" --cuda "${gpu}" \
+    --task-config "${task}_10ep" --cuda "${gpu}" --episodes 10 \
     > "'"${LOG_DIR}"'/collect_${task}.log" 2>&1
 '
 
