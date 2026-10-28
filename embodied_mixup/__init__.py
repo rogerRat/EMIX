@@ -6,6 +6,7 @@ from .configs import EmbodiedMixupConfig
 from .candidates import (
     EMIX_DATASET_VERSION,
     EMIX_INDEX_SCHEMA_VERSION,
+    SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS,
     EmixCrossPointGroup,
     EmixGroupMemberRef,
     EmixGroupState,
@@ -24,6 +25,7 @@ from .visualization.tuning_dashboard import make_rebuild_fn
 __all__ = [
     "EmbodiedMixupConfig",
     "EMIX_INDEX_SCHEMA_VERSION",
+    "SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS",
     "EMIX_DATASET_VERSION",
     "EmixIndex",
     "EmixIndexPublic",

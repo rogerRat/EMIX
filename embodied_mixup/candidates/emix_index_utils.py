@@ -38,7 +38,7 @@ from .pairs import build_frame_to_neighbors, run_neighbor_index_pairs
 logger = logging.getLogger(__name__)
 UTC_PLUS_8 = timezone(timedelta(hours=8))
 
-_FINGERPRINT_INCLUDED_ROOTS = ["meta", "data", "videos"]
+_FINGERPRINT_INCLUDED_ROOTS = ["meta", "data", "videos", "annotations"]
 _FINGERPRINT_EXCLUDED_PREFIXES = {"logs", "outputs", "vis_out", "emix", "emix_files"}
 
 # Above this pair count the fast sklearn HDBSCAN backend replaces the
@@ -46,7 +46,7 @@ _FINGERPRINT_EXCLUDED_PREFIXES = {"logs", "outputs", "vis_out", "emix", "emix_fi
 _SKLEARN_HDBSCAN_MIN_PAIRS = 2_000_000
 
 
-def compute_source_dataset_fingerprint(dataset_root: str | Path) -> dict[str, Any]:
+def compute_source_dataset_fingerprint(dataset_root: str | Path, included_roots: list[str] | None = None) -> dict[str, Any]:
     """Compute a strict source dataset fingerprint.
 
     @input: dataset_root [str|Path], exact LeRobotDataset root.
@@ -57,10 +57,11 @@ def compute_source_dataset_fingerprint(dataset_root: str | Path) -> dict[str, An
     """
 
     dataset_root = Path(dataset_root).expanduser().resolve()
+    roots = list(_FINGERPRINT_INCLUDED_ROOTS if included_roots is None else included_roots)
     logger.info("[candidates.index] Computing source dataset fingerprint for %s", dataset_root)
 
     file_records: list[dict[str, Any]] = []
-    for root_name in _FINGERPRINT_INCLUDED_ROOTS:
+    for root_name in roots:
         subtree = dataset_root / root_name
         if not subtree.exists():
             continue
@@ -95,7 +96,7 @@ def compute_source_dataset_fingerprint(dataset_root: str | Path) -> dict[str, An
 
     return {
         "algorithm": "sha256",
-        "included_roots": list(_FINGERPRINT_INCLUDED_ROOTS),
+        "included_roots": roots,
         "file_count": len(file_records),
         "total_bytes": total_bytes,
         "dataset_sha256": dataset_sha256,
@@ -116,7 +117,9 @@ def validate_source_dataset_fingerprint(
 
     dataset_root = Path(dataset_root).expanduser().resolve()
     logger.info("[emix.loader] Validating source dataset fingerprint for %s", dataset_root)
-    actual = compute_source_dataset_fingerprint(dataset_root)
+    actual = compute_source_dataset_fingerprint(
+        dataset_root, included_roots=list(expected.get("included_roots", _FINGERPRINT_INCLUDED_ROOTS))
+    )
     expected_sha = expected.get("dataset_sha256", "")
     actual_sha = actual["dataset_sha256"]
     if expected_sha != actual_sha:
@@ -337,6 +340,8 @@ def build_emix_index(
     logger.info("[candidates.index] Loading dataset arrays and episode boundaries...")
     poses = load_eef_poses(dataset)
     episode_indices = load_episode_indices(dataset)
+    from .segment_annotations import load_frame_segment_map
+    frame_segments = load_frame_segment_map(source_dataset.root, episode_indices)
     actions = load_actions(dataset)
     gripper_signal = load_gripper_signal(actions, dataset=dataset)
     episode_starts, episode_ends = build_episode_start_end(episode_indices)
@@ -421,6 +426,7 @@ def build_emix_index(
         "training_candidates_cap_per_cluster": config.training_candidates_cap_per_cluster,
         "training_candidates_include_noise": config.training_candidates_include_noise,
         "training_candidates_seed": config.training_candidates_seed,
+        "segment_annotations_enabled": frame_segments is not None,
     }
     index_id = make_emix_index_id(
         source_repo_id=source_dataset.repo_id,
@@ -443,11 +449,13 @@ def build_emix_index(
                 source_dataset_repo_id=source_dataset.repo_id,
                 source_episode_index=int(pair.anchor_episode),
                 source_frame_index=int(pair.anchor_idx),
+                segment=None if frame_segments is None else frame_segments.for_frame(int(pair.anchor_idx)),
             ),
             EmixGroupMemberRef(
                 source_dataset_repo_id=source_dataset.repo_id,
                 source_episode_index=int(pair.neighbor_episode),
                 source_frame_index=int(pair.neighbor_idx),
+                segment=None if frame_segments is None else frame_segments.for_frame(int(pair.neighbor_idx)),
             ),
         ]
 
@@ -463,7 +471,7 @@ def build_emix_index(
 
         groups.append(
             EmixCrossPointGroup(
-                group_id=make_emix_group_id(source_dataset.repo_id, members, idx),
+                group_id=make_emix_group_id(source_dataset.repo_id, members),
                 member_count=len(members),
                 members=members,
                 state=EmixGroupState(state=state, abort_reasons=abort_reasons),
@@ -504,6 +512,11 @@ def build_emix_index(
             "num_clusters": len([c for c in np.unique(cluster_labels) if c >= 0]),
             "num_noise": int(np.sum(np.asarray(cluster_labels) == -1)),
             "total_groups": len(groups),
+            "segment_annotations": None if frame_segments is None else {
+                "storage": "annotations/episode_{episode_index}.instances.h5",
+                "fields": ["segment_id", "segment_object"],
+                "unique_segments": len(frame_segments.segments),
+            },
             "config": config_snapshot,
         },
     )
@@ -554,6 +567,8 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
     logger.info("[candidates.index] Loading dataset arrays and episode boundaries...")
     poses = load_eef_poses(dataset)
     episode_indices = load_episode_indices(dataset)
+    from .segment_annotations import load_frame_segment_map
+    frame_segments = load_frame_segment_map(source_dataset.root, episode_indices)
     actions = load_actions(dataset)
     gripper_signal = load_gripper_signal(actions, dataset=dataset)
     episode_starts, episode_ends = build_episode_start_end(episode_indices)
@@ -662,6 +677,7 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
         "training_candidates_cap_per_cluster": config.training_candidates_cap_per_cluster,
         "training_candidates_include_noise": config.training_candidates_include_noise,
         "training_candidates_seed": config.training_candidates_seed,
+        "segment_annotations_enabled": frame_segments is not None,
     }
     index_id = make_emix_index_id(
         source_repo_id=source_dataset.repo_id,
@@ -693,6 +709,11 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
             "num_clusters": num_clusters,
             "num_noise": num_noise,
             "total_groups": total_pairs,
+            "segment_annotations": None if frame_segments is None else {
+                "storage": "annotations/episode_{episode_index}.instances.h5",
+                "fields": ["segment_id", "segment_object"],
+                "unique_segments": len(frame_segments.segments),
+            },
             "config": config_snapshot,
         },
     ).to_dict()
@@ -717,6 +738,7 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
                 source_repo_id=source_dataset.repo_id,
                 pair_index=idx,
                 member_frames_ok=member_frames_ok,
+                frame_segments=frame_segments,
             )
             if idx:
                 handle.write(", ")
@@ -1019,6 +1041,7 @@ def _pair_group_payload(
     source_repo_id: str,
     pair_index: int,
     member_frames_ok,
+    frame_segments=None,
 ) -> dict:
     """Build one group's JSON dict, equivalent to the object-path serialization.
 
@@ -1039,15 +1062,17 @@ def _pair_group_payload(
             "source_dataset_repo_id": source_repo_id,
             "source_episode_index": anchor_episode,
             "source_frame_index": anchor_idx,
+            **({"segment": frame_segments.for_frame(anchor_idx)} if frame_segments is not None and frame_segments.for_frame(anchor_idx) is not None else {}),
         },
         {
             "source_dataset_repo_id": source_repo_id,
             "source_episode_index": neighbor_episode,
             "source_frame_index": neighbor_idx,
+            **({"segment": frame_segments.for_frame(neighbor_idx)} if frame_segments is not None and frame_segments.for_frame(neighbor_idx) is not None else {}),
         },
     ]
     raw = json.dumps(
-        {"source_repo_id": source_repo_id, "members": members, "salt": pair_index},
+        {"source_repo_id": source_repo_id, "members": members, "salt": 0},
         sort_keys=True,
     )
     group_id = f"emix_group_{hashlib.md5(raw.encode('utf-8')).hexdigest()[:12]}"

@@ -4,6 +4,7 @@ from ..configs import EmbodiedMixupConfig
 from .emix_index import (
     EMIX_DATASET_VERSION,
     EMIX_INDEX_SCHEMA_VERSION,
+    SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS,
     EmixCrossPointGroup,
     EmixGroupMemberRef,
     EmixGroupState,
@@ -18,6 +19,7 @@ from .emix_index_utils import build_emix_index, inspect_source_dataset, load_emi
 __all__ = [
     "EmbodiedMixupConfig",
     "EMIX_INDEX_SCHEMA_VERSION",
+    "SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS",
     "EMIX_DATASET_VERSION",
     "EmixIndex",
     "EmixIndexPublic",

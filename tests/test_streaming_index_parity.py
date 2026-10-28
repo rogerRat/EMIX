@@ -493,6 +493,65 @@ class StreamingParityTest(unittest.TestCase):
                     np.testing.assert_allclose(exp, act, rtol=1e-5, atol=1e-8)
 
 
+
+    def test_segment_sidecars_populate_both_builder_paths(self):
+        import h5py
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ("meta", "data", "videos", "annotations"):
+                (root / name).mkdir()
+            dataset = _FakeDataset(root=str(root))
+            for episode_index in range(N_EPISODES):
+                with h5py.File(root / "annotations" / f"episode_{episode_index}.instances.h5", "w") as handle:
+                    handle.attrs["schema_version"] = 2
+                    handle.attrs["objects"] = json.dumps(["background", "block1"])
+                    handle.create_dataset(
+                        "segment_id",
+                        data=np.asarray(
+                            ["approach" if local < EP_LEN // 2 else "pick_place"
+                             for local in range(EP_LEN)],
+                            dtype=h5py.string_dtype("utf-8"),
+                        ),
+                    )
+                    handle.create_dataset(
+                        "segment_object",
+                        data=np.asarray(["block1"] * EP_LEN, dtype=h5py.string_dtype("utf-8")),
+                    )
+
+            scalar = build_emix_index(dataset=dataset, config=self.config)
+            scalar_by_pair = {}
+            for group in scalar.content.cross_point_groups:
+                pair = tuple(member.source_frame_index for member in group.members)
+                scalar_by_pair[pair] = [member.segment for member in group.members]
+                self.assertTrue(all(member.segment for member in group.members))
+            streaming_path = build_emix_index_streaming(
+                dataset=dataset, config=self.config, output_path=root / "streaming.json"
+            )
+            payload = json.loads(streaming_path.read_text(encoding="utf-8"))
+            streaming_by_pair = {
+                tuple(member["source_frame_index"] for member in group["members"]):
+                    [member.get("segment") for member in group["members"]]
+                for group in payload["content"]["cross_point_groups"]
+            }
+            self.assertEqual(scalar_by_pair, streaming_by_pair)
+            scalar_groups = {
+                tuple(member.source_frame_index for member in group.members): group.group_id
+                for group in scalar.content.cross_point_groups
+            }
+            streaming_groups = {
+                tuple(member["source_frame_index"] for member in group["members"]): group["group_id"]
+                for group in payload["content"]["cross_point_groups"]
+            }
+            self.assertEqual(scalar_groups, streaming_groups)
+            scalar_metadata = scalar.public.metadata
+            self.assertEqual(
+                scalar_metadata["segment_annotations"],
+                payload["public"]["metadata"]["segment_annotations"],
+            )
+            self.assertTrue(payload["public"]["metadata"]["segment_annotations"])
+            self.assertTrue(payload["public"]["metadata"]["config"]["segment_annotations_enabled"])
+
     def test_sklearn_backend_matches_hdbscan_partition(self):
         """Force the fast sklearn backend and check the partition matches."""
         import embodied_mixup.candidates.emix_index_utils as index_utils

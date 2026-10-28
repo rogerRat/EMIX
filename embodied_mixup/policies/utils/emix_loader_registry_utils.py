@@ -17,7 +17,11 @@ from typing import Any
 import numpy as np
 import torch
 
-from ...candidates.emix_index import EMIX_INDEX_SCHEMA_VERSION, EmixIndex
+from ...candidates.emix_index import (
+    EMIX_INDEX_SCHEMA_VERSION,
+    SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS,
+    EmixIndex,
+)
 from ...candidates.emix_index_utils import load_emix_index, validate_source_dataset_fingerprint
 from ...datasets import require_lerobot_dataset_root
 from .batch import PolicyTemporalSpec
@@ -80,10 +84,10 @@ class EmixIndexReader:
         self.index: EmixIndex = load_emix_index(emix_index_path)
 
         # Validate schema version
-        if self.index.public.schema_version != EMIX_INDEX_SCHEMA_VERSION:
+        if self.index.public.schema_version not in SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS:
             raise ValueError(
                 f"Unsupported EmixIndex schema_version: {self.index.public.schema_version}. "
-                f"Expected {EMIX_INDEX_SCHEMA_VERSION}."
+                f"Supported versions: {sorted(SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS)}."
             )
 
         # Validate exactly one source dataset
@@ -387,6 +391,11 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             emix_index_path=emix_index_path,
             policy_temporal_spec=policy_temporal_spec,
         )
+        if loader_cfg.segment_wise_enable and self.reader.index.public.schema_version < 3:
+            raise ValueError(
+                "segment_wise.enable requires EmixIndex schema_version 3 with member segment metadata; "
+                "rebuild the index from segment-annotated data."
+            )
         self.records = self.reader.training_samples(loader_cfg.policy_type)
         if loader_cfg.segment_wise_enable:
             self.records = [

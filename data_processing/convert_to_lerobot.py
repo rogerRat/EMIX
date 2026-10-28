@@ -201,6 +201,8 @@ def main(args):
     @scenario: Bridge native RoboTwin collection output into current EMIX training inputs.
     """
     started_at = time.perf_counter()
+    if getattr(args, "segment_annotations_root", None) and not getattr(args, "instance_annotations", False):
+        raise ValueError("--segment-annotations-root requires --instance-annotations")
     source = Path(args.src).expanduser().resolve()
     episodes = sorted((source / "data").glob("episode*.hdf5"), key=lambda item: int(item.stem.removeprefix("episode")))
     if not episodes:
@@ -258,10 +260,22 @@ def main(args):
                 raise FileNotFoundError(f"Missing episode object table: {object_path}")
             renderer_objects = {int(key): value for key, value in json.loads(object_path.read_text(encoding="utf-8")).items()}
             frame_ids = np.arange(len(episode["instance_ids"]), dtype=np.int64)
+            segment_labels = None
+            segment_root = getattr(args, "segment_annotations_root", None)
+            if segment_root:
+                segment_path = Path(segment_root).expanduser().resolve() / f"{path.stem}.json"
+                if not segment_path.is_file():
+                    raise FileNotFoundError(f"Missing per-frame segment annotation: {segment_path}")
+                segment_payload = json.loads(segment_path.read_text(encoding="utf-8"))
+                segment_labels = segment_payload.get("segments") if isinstance(segment_payload, dict) else segment_payload
+                if not isinstance(segment_labels, list) or len(segment_labels) != len(frame_ids):
+                    raise ValueError(
+                        f"Segment annotation must have one entry per converted source frame: {segment_path}"
+                    )
             annotation = InstanceAnnotations.from_renderer(
                 episode["instance_ids"], renderer_objects=renderer_objects,
                 dataset_id=repo_id, episode_id=str(episode_index), camera="head_camera",
-                frame_ids=frame_ids,
+                frame_ids=frame_ids, segments=segment_labels,
             )
             _, annotation = transform_pair(
                 None, annotation,
@@ -349,4 +363,9 @@ if __name__ == "__main__":
     parser.add_argument("--fps", type=int, default=17, help="Approximate 250 Hz / save_freq 15 source rate.")
     parser.add_argument("--left-qpos-dim", type=int, default=7, help="Left Piper arm-plus-gripper dimensions.")
     parser.add_argument("--instance-annotations", action="store_true", help="Convert synchronized raw actor IDs into lossless annotation sidecars.")
+    parser.add_argument(
+        "--segment-annotations-root",
+        default=None,
+        help="Optional directory with episodeN.json per-frame reviewed segment labels.",
+    )
     main(parser.parse_args())

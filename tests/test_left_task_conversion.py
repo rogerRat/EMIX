@@ -272,7 +272,7 @@ class TestCreateDataset(unittest.TestCase):
 
 
 class TestConvertMain(unittest.TestCase):
-    def _run_main(self, *, include_instructions=True):
+    def _run_main(self, *, include_instructions=True, with_segments=False):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         source = tmp / "source"
@@ -285,6 +285,30 @@ class TestConvertMain(unittest.TestCase):
             for index in range(2):
                 (source / "instructions" / f"episode{index}.json").write_text(
                     json.dumps({"seen": [f"seen prompt {index}"]}), encoding="utf-8")
+        segment_root = source / "segments"
+        if with_segments:
+            (source / "instance_objects").mkdir()
+            segment_root.mkdir()
+            for index in range(2):
+                with h5py.File(source / "data" / f"episode{index}.hdf5", "a") as handle:
+                    state = handle["joint_action/vector"][:]
+                    state[:, 7:] = state[0, 7:]
+                    handle["joint_action/vector"][:] = state
+                    handle.create_dataset(
+                        "observation/head_camera/instance_id",
+                        data=np.full((6, 64, 64), 7, dtype=np.uint32),
+                    )
+                (source / "instance_objects" / f"episode{index}.json").write_text(
+                    json.dumps({"0": "background", "7": "cup"}), encoding="utf-8")
+                reviewed_segments = [
+                    {"id": "approach", "object": "cup"},
+                    {"id": "pick_cup", "object": "cup"},
+                    {"id": "pick_cup", "object": "cup"},
+                    {"id": "place_cup", "object": "cup"},
+                    None,
+                ]
+                (segment_root / f"episode{index}.json").write_text(
+                    json.dumps({"segments": reviewed_segments}), encoding="utf-8")
         target = tmp / "dataset"  # does not exist yet
 
         fix_calls: list[tuple] = []
@@ -314,6 +338,8 @@ class TestConvertMain(unittest.TestCase):
                 image_height=84,
                 fps=17,
                 left_qpos_dim=7,
+                instance_annotations=with_segments,
+                segment_annotations_root=str(segment_root) if with_segments else None,
             )
             convert.main(args)
             dataset = instances[0]
@@ -343,6 +369,26 @@ class TestConvertMain(unittest.TestCase):
         self.assertEqual(fix_calls[0], (str(Path(dataset.root)), "test-repo"))
         self.assertTrue(dataset._writer_closed)
         self.assertTrue(dataset._image_writer_stopped)
+
+    def test_converts_reviewed_segment_labels_into_aligned_sidecars(self):
+        from data_processing.instance_annotations import InstanceAnnotations
+
+        dataset, _ = self._run_main(with_segments=True)
+        for episode_index in range(2):
+            sidecar = Path(dataset.root) / "annotations" / f"episode_{episode_index}.instances.h5"
+            annotations = InstanceAnnotations.load(sidecar)
+            self.assertEqual(len(annotations.labels), 5)
+            self.assertEqual(annotations.objects, ("background", "cup"))
+            self.assertEqual(
+                annotations.segments,
+                (
+                    {"id": "approach", "object": "cup"},
+                    {"id": "pick_cup", "object": "cup"},
+                    {"id": "pick_cup", "object": "cup"},
+                    {"id": "place_cup", "object": "cup"},
+                    None,
+                ),
+            )
 
     def test_missing_instructions_with_no_fallback_raises(self):
         with self.assertRaises(ValueError):

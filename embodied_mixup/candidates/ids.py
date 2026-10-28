@@ -40,6 +40,7 @@ def make_emix_group_id(
                     "source_dataset_repo_id": str(member.source_dataset_repo_id),
                     "source_episode_index": int(member.source_episode_index),
                     "source_frame_index": int(member.source_frame_index),
+                    **({"segment": member.segment} if member.segment is not None else {}),
                 }
                 for member in members
             ],

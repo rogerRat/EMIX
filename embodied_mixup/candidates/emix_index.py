@@ -11,7 +11,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-EMIX_INDEX_SCHEMA_VERSION = 2
+EMIX_INDEX_SCHEMA_VERSION = 3
+SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS = {2, 3}
 EMIX_DATASET_VERSION = "V3.0"
 
 
@@ -148,8 +149,12 @@ class EmixGroupMemberRef:
         self.source_frame_index = int(self.source_frame_index)
         if self.segment is not None:
             self.segment = {str(key): str(value) for key, value in self.segment.items()}
-            if not self.segment.get("id") or not self.segment.get("object"):
+            if set(self.segment) != {"id", "object"}:
+                raise ValueError("segment metadata must contain exactly id and object")
+            if not self.segment["id"] or not self.segment["object"]:
                 raise ValueError("segment metadata requires nonempty id and object")
+            if self.segment["object"] == "patch_target":
+                raise ValueError("legacy object name 'patch_target' is unsupported")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -226,7 +231,7 @@ class EmixIndexPublic:
         self.created_at = str(self.created_at)
         self.source_dataset_version = str(self.source_dataset_version)
         self.metadata = dict(self.metadata)
-        if self.schema_version != EMIX_INDEX_SCHEMA_VERSION:
+        if self.schema_version not in SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS:
             raise ValueError(f"Unsupported EmixIndex schema_version: {self.schema_version}")
         if not self.source_datasets:
             raise ValueError("source_datasets must not be empty.")

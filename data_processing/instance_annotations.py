@@ -15,7 +15,7 @@ import h5py
 import numpy as np
 from PIL import Image
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _label_dtype(count: int):
@@ -42,6 +42,7 @@ class InstanceAnnotations:
     labels: np.ndarray  # [T,H,W], compact logical IDs
     objects: tuple[str, ...]
     history: tuple[dict, ...] = ()
+    segments: tuple[dict[str, str] | None, ...] | None = None
 
     @property
     def stream_key(self):
@@ -53,8 +54,9 @@ class InstanceAnnotations:
         if (not isinstance(self.objects, tuple) or not self.objects
                 or any(not isinstance(v, str) or not v for v in self.objects)
                 or self.objects[0] != 'background'
-                or len(set(self.objects)) != len(self.objects)):
-            raise ValueError('objects must be unique names with background first')
+                or len(set(self.objects)) != len(self.objects)
+                or 'patch_target' in self.objects):
+            raise ValueError('objects must be unique canonical names with background first')
         if (self.labels.ndim != 3 or any(n == 0 for n in self.labels.shape)
                 or self.labels.dtype.kind not in 'ui'):
             raise ValueError('labels must be a nonempty integer [T,H,W] array')
@@ -67,10 +69,23 @@ class InstanceAnnotations:
             raise ValueError('frame IDs must be unique nonnegative integers, one per frame')
         if not isinstance(self.history, tuple) or any(not isinstance(v, dict) for v in self.history):
             raise ValueError('history must be a tuple of transform records')
+        if self.segments is not None:
+            if not isinstance(self.segments, tuple) or len(self.segments) != len(self.labels):
+                raise ValueError('segments must contain one optional label per frame')
+            for segment in self.segments:
+                if segment is None:
+                    continue
+                if (not isinstance(segment, dict) or not segment.get('id')
+                        or not segment.get('object')):
+                    raise ValueError('each segment requires nonempty id and object')
+                if segment['object'] not in self.objects:
+                    raise ValueError(f"segment object is absent from object table: {segment['object']}")
+                if segment['object'] == 'background' or segment['object'].startswith('scene_'):
+                    raise ValueError('segment object must be a canonical task object')
 
     @classmethod
     def from_renderer(cls, raw_ids, *, renderer_objects, dataset_id, episode_id,
-                      camera, frame_ids):
+                      camera, frame_ids, segments=None):
         """Remap potentially large renderer IDs to small episode-local IDs.
 
         renderer_objects must explicitly include all observed IDs, including
@@ -119,8 +134,14 @@ class InstanceAnnotations:
                                 dtype=label_dtype)
             labels = lookup[inverse].reshape(raw_ids.shape)
 
+        normalized_segments = None
+        if segments is not None:
+            normalized_segments = tuple(
+                None if value is None else {"id": str(value["id"]), "object": str(value["object"])}
+                for value in segments
+            )
         result = cls(dataset_id, episode_id, camera, np.asarray(frame_ids).copy(),
-                     labels, objects)
+                     labels, objects, segments=normalized_segments)
         result.validate()
         return result
 
@@ -143,6 +164,12 @@ class InstanceAnnotations:
                 f.attrs['objects'] = json.dumps(self.objects, ensure_ascii=False)
                 f.attrs['history'] = json.dumps(self.history, ensure_ascii=False)
                 f.create_dataset('frame_ids', data=self.frame_ids)
+                if self.segments is not None:
+                    string_type = h5py.string_dtype(encoding='utf-8')
+                    segment_ids = [segment['id'] if segment is not None else '' for segment in self.segments]
+                    segment_objects = [segment['object'] if segment is not None else '' for segment in self.segments]
+                    f.create_dataset('segment_id', data=segment_ids, dtype=string_type)
+                    f.create_dataset('segment_object', data=segment_objects, dtype=string_type)
                 f.create_dataset('labels', data=self.labels.astype(_label_dtype(len(self.objects))),
                                  chunks=(1, *self.labels.shape[1:]), compression='gzip',
                                  compression_opts=1, shuffle=True)
@@ -157,14 +184,25 @@ class InstanceAnnotations:
             required = {'schema_version', 'dataset_id', 'episode_id', 'camera', 'objects', 'history'}
             if not required.issubset(f.attrs) or not {'frame_ids', 'labels'}.issubset(f):
                 raise ValueError('missing annotation fields')
-            if f.attrs['schema_version'] != SCHEMA_VERSION:
+            if int(f.attrs['schema_version']) not in (1, SCHEMA_VERSION):
                 raise ValueError('unsupported annotation schema')
             objects = json.loads(f.attrs['objects'])
             history = json.loads(f.attrs['history'])
             if not isinstance(objects, list) or not isinstance(history, list):
                 raise ValueError('objects and history must be lists')
+            segments = None
+            if 'segment_id' in f or 'segment_object' in f:
+                if 'segment_id' not in f or 'segment_object' not in f:
+                    raise ValueError('segment_id and segment_object must both be present')
+                segment_ids = [v.decode('utf-8') if isinstance(v, bytes) else str(v) for v in f['segment_id'][:]]
+                segment_objects = [v.decode('utf-8') if isinstance(v, bytes) else str(v) for v in f['segment_object'][:]]
+                segments = tuple(
+                    None if not segment_id and not object_name
+                    else {'id': segment_id, 'object': object_name}
+                    for segment_id, object_name in zip(segment_ids, segment_objects)
+                )
             result = cls(f.attrs['dataset_id'], f.attrs['episode_id'], f.attrs['camera'],
-                         f['frame_ids'][:], f['labels'][:], tuple(objects), tuple(history))
+                         f['frame_ids'][:], f['labels'][:], tuple(objects), tuple(history), segments)
         result.validate()
         return result
 
@@ -192,6 +230,7 @@ def transform_pair(rgb, annotations, *, stream_key, frame_ids,
             raise ValueError('RGB must be uint8 [T,H,W,3] aligned with labels')
     labels = annotations.labels
     ids = annotations.frame_ids
+    segments = annotations.segments
     record = {}
     if indices is not None:
         indices = np.asarray(indices)
@@ -202,6 +241,8 @@ def transform_pair(rgb, annotations, *, stream_key, frame_ids,
         if rgb is not None:
             rgb = rgb[indices]
         labels, ids = labels[indices], ids[indices]
+        if segments is not None:
+            segments = tuple(segments[int(i)] for i in indices)
         record['indices'] = indices.tolist()
     if crop is not None:
         if len(crop) != 4 or any(type(v) is not int for v in crop):
@@ -231,6 +272,6 @@ def transform_pair(rgb, annotations, *, stream_key, frame_ids,
         labels = labels[:, :, ::-1]
         record['flip_horizontal'] = True
     output = replace(annotations, labels=labels.copy(), frame_ids=ids.copy(),
-                     history=annotations.history + ((record,) if record else ()))
+                     history=annotations.history + ((record,) if record else ()), segments=segments)
     output.validate()
     return (None if rgb is None else np.ascontiguousarray(rgb)), output

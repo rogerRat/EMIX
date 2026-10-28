@@ -5,14 +5,14 @@
 
 本文档描述当前代码实际使用的离线工件流、`EmixIndex` 的目录与字段契约，以及它们和训练 batch 之间的转换边界。
 
-当前架构（schema v2）直接从源 `LeRobotDataset` 加载训练帧，不需要物化中间数据集。`materialize` 命令已移除。
+当前架构（schema v2/v3）直接从源 `LeRobotDataset` 加载训练帧，不需要物化中间数据集。`materialize` 命令已移除。
 
 ## 1. 标准离线流程
 
 当前仓库支持的标准离线工件流是：
 
 1. 源 `LeRobotDataset`
-2. `EmixIndex` (schema v2，含 sha256 源数据集 fingerprint)
+2. `EmixIndex`（新构建为 schema v3，含 sha256 源数据集 fingerprint）
 3. `EmixIndexReader` 直接加载源帧
 4. training
 
@@ -57,9 +57,9 @@
 
 ### 2.1.1 `EmixIndex` 数据结构
 
-`EmixIndex` 是一个 Python dataclass 根对象，定义在 `embodied_mixup/candidates/emix_index.py`（schema v2）。它通过 `to_dict()` 和 `from_dict()` 做确定性序列化与反序列化，`save_emix_index(...)` 负责把它写成 `emix_index.json`，`load_emix_index(...)` 负责从 JSON 读回对象。
+`EmixIndex` 是一个 Python dataclass 根对象，定义在 `embodied_mixup/candidates/emix_index.py`（schema v2/v3）。它通过 `to_dict()` 和 `from_dict()` 做确定性序列化与反序列化，`save_emix_index(...)` 负责把它写成 `emix_index.json`，`load_emix_index(...)` 负责从 JSON 读回对象。
 
-`public.metadata` 中必须包含 `source_dataset_fingerprint`，记录源数据集的 sha256 全目录哈希，用于在训练加载时严格校验数据完整性。
+`public.metadata` 中必须包含 `source_dataset_fingerprint`，记录源数据集 meta/、data/、videos/ 及存在时 annotations/ 的 sha256 哈希，用于在训练加载时严格校验数据完整性。
 
 `EmixIndex` 的根结构固定为：
 
@@ -127,6 +127,7 @@ EmixGroupMemberRef
   source_dataset_repo_id: str
   source_episode_index: int
   source_frame_index: int
+  segment: {id: str, object: str} | omitted
 ```
 
 `state` 固定包含：
@@ -397,9 +398,11 @@ LeRobot 会根据数据集 metadata 中的 feature 列表自动构造 policy fea
 
 训练 loader 负责把 `EmixIndex` 直接变成 batch，无需物化中间数据集。
 
+新构建使用 schema v3；每个 member 可包含逐帧 segment: {id, object}。新指纹纳入 annotations/，因此标注改动会要求重建索引。schema v2 仅在关闭 segment-wise 时兼容读取。
+
 `EmixIndexReader` 在构造时会：
 
-1. 验证 `schema_version == 2`
+1. 验证 schema_version 为受支持的 2 或 3（segment-wise 要求 v3）
 2. 验证 `source_repo_id` 和 `source_root` 与 loader 参数匹配
 3. 用 sha256 全目录哈希验证源数据集 fingerprint，哈希不匹配时立即失败
 4. 加载源 `LeRobotDataset`，建立 episode 边界映射
@@ -432,7 +435,7 @@ CLI 的 `--root` 和训练 YAML 的 `dataset.root` 必须是精确的数据集�
 
 训练 YAML 的 `emix.index_path` 必须指向有效的 `emix_index.json`，且：
 
-- `schema_version` 必须为 2
+- schema_version 必须为 2 或 3；segment-wise 要求 v3
 - `source_dataset_fingerprint` 必须与实际源数据集一致
 - 不允许出现 `emix.files_root` 或 `policy.emix_files_root`（已移除）
 
@@ -441,7 +444,7 @@ CLI 的 `--root` 和训练 YAML 的 `dataset.root` 必须是精确的数据集�
 loader 遇到以下情况必须立即失败：
 
 - `emix_index.json` 文件不存在
-- `schema_version != 2`
+- schema_version 不属于 2、3
 - `source_dataset_fingerprint` 与实际源数据集不一致
 - `source_repo_id` 或 `source_root` 与 loader 参数不匹配
 - EmixIndex 中没有 group

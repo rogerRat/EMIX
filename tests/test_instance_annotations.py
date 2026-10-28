@@ -121,6 +121,41 @@ class InstanceAnnotationTests(unittest.TestCase):
             with self.subTest(options=options), self.assertRaises(ValueError):
                 self.transform(rgb, ann, **options)
 
+
+    def test_segment_sidecar_roundtrip_and_frame_transform(self):
+        raw = np.array([[[0, 7]], [[7, 0]], [[0, 7]]], dtype=np.uint8)
+        segments = [
+            {"id": "approach", "object": "cup"},
+            {"id": "pick", "object": "cup"},
+            None,
+        ]
+        ann = InstanceAnnotations.from_renderer(
+            raw, renderer_objects={0: "background", 7: "cup"},
+            dataset_id="d", episode_id="0", camera="head", frame_ids=[0, 1, 2],
+            segments=segments,
+        )
+        _, selected = self.transform(None, ann, indices=[2, 0, 1], flip_horizontal=True)
+        self.assertEqual(selected.segments, (None, segments[0], segments[1]))
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "episode.h5"
+            selected.save(path)
+            loaded = InstanceAnnotations.load(path)
+        self.assertEqual(loaded.segments, selected.segments)
+        self.assertEqual(loaded.segments[0], None)
+        self.assertEqual(loaded.segments[2], {"id": "pick", "object": "cup"})
+
+    def test_segment_requires_canonical_object_and_rejects_legacy_name(self):
+        raw = np.array([[[0, 7]]], dtype=np.uint8)
+        for segment, objects in [
+            ({"id": "pick", "object": "basket"}, {0: "background", 7: "cup"}),
+            ({"id": "pick", "object": "patch_target"}, {0: "background", 7: "patch_target"}),
+        ]:
+            with self.subTest(segment=segment), self.assertRaises(ValueError):
+                InstanceAnnotations.from_renderer(
+                    raw, renderer_objects=objects, dataset_id="d", episode_id="0",
+                    camera="head", frame_ids=[0], segments=[segment],
+                )
+
     def test_schema_and_missing_fields_rejected(self):
         _, ann = self.fixture()
         with tempfile.TemporaryDirectory() as folder:

@@ -199,7 +199,7 @@ action / emix_actions: (B, action_steps, action_dim)
 
 ### 3.4 EmixIndex 结构
 
-`emix_index.json` 是训练侧的 EMIX 索引工件（schema v2）。
+`emix_index.json` 是训练侧的 EMIX 索引工件（schema v2/v3；segment-wise 要求 v3）。
 
 ```text
 data/emix_data/<repo_id>/
@@ -299,7 +299,7 @@ conda run -n emix python -m emix train \
 
 `EmixIndexReader` 在构造时执行以下验证：
 
-1. 验证 `emix_index.json` 的 `schema_version == 2`。
+1. 验证 emix_index.json 的 schema_version 为 2 或 3；segment-wise 开启时要求 v3。
 2. 验证源数据集 `repo_id` 和 `root` 与 loader 参数匹配。
 3. 用 sha256 全目录哈希验证源数据集 fingerprint。
 4. 加载源 `LeRobotDataset` 并建立 episode 边界映射。
@@ -338,7 +338,7 @@ conda run -n emix python -m emix train \
 
 - `dataset.root/meta/info.json` 缺失
 - `emix.index_path` 文件不存在
-- EmixIndex `schema_version != 2`
+- EmixIndex schema_version 不属于 2、3，或 segment-wise 开启但版本低于 3
 - EmixIndex 中的 `source_dataset_fingerprint` 与实际源数据集不一致
 - EmixIndex 的 `source_repo_id` 或 `source_root` 与 loader 参数不匹配
 - YAML 中出现 `emix.files_root` 或 `policy.emix_files_root`（已移除的旧字段）
@@ -377,7 +377,7 @@ conda run -n emix python -m emix train \
 - `dataset.root` 是否是精确的源 LeRobot 根目录。
 - `dataset.repo_id` 是否与构建 EmixIndex 时使用的 `repo_id` 完全一致。
 - 如果是 `emix_*` 策略，`emix.index_path` 是否指向有效的 `emix_index.json`。
-- EmixIndex 的 `schema_version` 是否为 2。
+- EmixIndex 的 `schema_version` 是否为 2 或 3（segment-wise 要求 3）。
 - EmixIndex 中是否不存在 `emix.files_root` 配置键（已移除）。
 - 至少一个 group 是否处于 `training` 状态。
 - 至少一个窗口是否包含 `action`。

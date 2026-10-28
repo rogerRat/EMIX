@@ -121,7 +121,7 @@ docs/
 
 当前 EMIX 的唯一永久工件是：
 
-- `EmixIndex`（schema v2，含 sha256 源数据集 fingerprint）
+- `EmixIndex`（schema v3，含 sha256 源数据集 fingerprint）
 
 训练直接从源 `LeRobotDataset` + `EmixIndex` 加载帧，不需要物化中间数据集。任何旧的 `EmixFiles`、sample 目录树、pickle 结果或旧 loader 结构都不属于当前支持路径。
 
@@ -169,13 +169,13 @@ docs/
 
 它的结构分为两部分。
 
-- `public`：公开元数据，例如 `id`、`schema_version`（必须为 2）、`created_at`、`source_datasets`、`source_dataset_version`、`metadata`。
+- `public`：公开元数据，例如 `id`、`schema_version`（新构建为 3；读取器兼容 2 和 3）、`created_at`、`source_datasets`、`source_dataset_version`、`metadata`。
 - `content`：内容区，主要是 `cross_point_groups` 和组状态。
 
 `public.metadata` 必须包含 `source_dataset_fingerprint`，字段结构为：
 
 - `algorithm`: `”sha256”`
-- `included_roots`: 参与哈希的子目录列表（`meta/`, `data/`, `videos/`）
+- `included_roots`: 新索引包含 meta/、data/、videos/、annotations/；旧 schema v2 指纹按其记录的目录列表校验
 - `file_count`: 参与哈希的文件数
 - `total_bytes`: 总字节数
 - `dataset_sha256`: 全目录哈希值（16 进制 64 字符）
@@ -188,13 +188,15 @@ docs/
 
 `EmixIndex` 不保存展开后的训练窗口，也不保存合成的 pair 数据集。训练 loader 在运行时直接从源数据集读取帧。
 
+schema v3 的 members[] 可带 segment: {id, object}。id 是当前任务的阶段标识，object 必须是该 episode 实例 sidecar 中的规范操作对象名。缺少阶段标注的帧省略该字段。构建器从 annotations/episode_<episode_index>.instances.h5 的 segment_id、segment_object 按帧读取；annotations/ 也加入新索引 fingerprint。schema v2 可在关闭 segment-wise 时读取，开启该功能必须重建为 schema v3。协议详见 docs/dev/EMIX_INDEX_SPEC.md。
+
 ### 4.3 训练契约
 
 训练侧通过 `EmixIndexReader` 直接从源 `LeRobotDataset` 加载帧。
 
 必须满足以下约束：
 
-- `emix.index_path` 必须指向有效的 `emix_index.json`（schema v2）。
+- `emix.index_path` 必须指向有效的 `emix_index.json`（schema v2/v3；segment-wise 要求 v3）。
 - `dataset.root` 和 `dataset.repo_id` 必须与构建 EmixIndex 时使用的源数据集完全一致。
 - EmixIndex 中的 `source_dataset_fingerprint` 必须与实际源数据集匹配。
 - 不允许使用 `emix.files_root` 或 `policy.emix_files_root`（已移除，出现时立即报错）。
@@ -384,7 +386,7 @@ docs/
 
 ### 6.1 `build`
 
-`build` 的职责是从源数据构建 `EmixIndex`（schema v2）。
+`build` 的职责是从源数据构建 `EmixIndex`（schema v2/v3；segment-wise 要求 v3）。
 
 核心步骤是：
 
@@ -424,7 +426,7 @@ docs/
 
 应优先覆盖以下内容。
 
-- `EmixIndex` JSON round-trip（schema v2，含 fingerprint）
+- `EmixIndex` JSON round-trip（schema v2/v3，含 fingerprint）
 - fingerprint 稳定性（同一数据集两次哈希一致）
 - fingerprint 变化（文件内容改变后哈希不一致）
 - `EmixIndexReader` 对 fingerprint 不匹配的硬失败行为
@@ -437,7 +439,7 @@ docs/
 建议的验证序列是：
 
 1. 用真实 LeRobotDataset 跑 `build`，生成 `emix_index.json`。
-2. 检查 `emix_index.json` 的 `schema_version == 2` 和 `source_dataset_fingerprint`。
+2. 检查 `emix_index.json` 的 schema_version 为 2 或 3，并核对 `source_dataset_fingerprint`。
 3. 检查至少一个 training group。
 4. 在训练 YAML 中设置 `emix.index_path`。
 5. 用 `EmixIndexReader` 跑 loader smoke。

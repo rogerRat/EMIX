@@ -2,7 +2,7 @@
 
 > 记录日期：2026-09-22
 > 更新：2026-10-28
-> 状态：条目 1 已实现训练/评估独立高斯噪声注入；条目 2 Patch 与 detect_overlap 拼贴拒绝代码链路已接入并完成，当前 sin-v0-patch 正式实验运行中（拼贴拒绝默认关闭）；条目 3 训练侧 segment_wise 配置和 EmixIndex segment 字段已开始接入，任务专属边界/对象标注与采集对象表扩展仍待完成。
+> 状态：条目 1 已实现训练/评估独立高斯噪声注入；条目 2 Patch 与 detect_overlap 拼贴拒绝代码链路已接入并完成，当前 sin-v0-patch 正式实验运行中（拼贴拒绝默认关闭）；条目 3 训练端与数据生产端的 segment_wise 接口已接通；任务专属阶段生成及十任务逐帧标注验收仍待完成。
 
 ## 开发清单
 
@@ -46,13 +46,13 @@
      | stack_bowls_two_left_oppo_cam | bowl1、bowl2 |
 
      例如 place_bread_basket 的顺序为：从 episode 起点至第一次夹爪闭合中点，topick_0 → bread_0；闭合中点至第一次释放中点，toplace_0 → bread_0；释放中点至第二次闭合中点，topick_1 → bread_1；第二次闭合中点至第二次释放中点，toplace_1 → bread_1。其余任务按脚本顺序展开。表中列出的名称同时作为 segment.object 和实例对象表中的规范名称。
-   - **实现进度（2026-10-28）**：训练配置解析已支持 segment_wise.enable；EmixIndex member 支持可选 segment: {id, object}；训练侧只接受阶段及对象均匹配的候选，并可按实例名生成对象掩码，对 Patch 或线性 Mix 做对象范围限制。RoboTwin 十任务已增加显式 segment_object_actors() 对象清单；采集对象表对所有操作对象统一使用该清单中的规范逻辑名，Patch 目标不再使用特殊标签名。该配置默认关闭。当前索引构建、逐帧阶段生成和 EmixIndex segment 字段填充仍未接入。
-   - **关键前置工作**：RoboTwin 的 get_instance_object_map() 现按每个任务的 segment_object_actors() 登记所有被操作 actor；patch_target_actor() 只用于确认 Patch 目标对象身份，不改变该对象由 segment_object_actors() 指定的名称。标注和读取器不再接受历史名称 patch_target；旧标注及旧数据索引需重新生成，不把 scene_* 标签猜作任务对象。接下来需按任务顺序结合 gripper 连续开合事件中点生成逐帧 segment，再在建立 EmixIndex 时给每个 member 写入 segment: {id, object}。任务专属边界仍须逐项对照专家脚本和数据校准；不能仅靠通用夹爪阈值检测代替任务标注。
+   - **实现进度（2026-10-28）**：训练配置解析已支持 segment_wise.enable；EmixIndex member 支持可选 segment: {id, object}；训练侧只接受阶段及对象均匹配的候选，并可按实例名生成对象掩码，对 Patch 或线性 Mix 做对象范围限制。RoboTwin 十任务已增加显式 segment_object_actors() 对象清单；采集对象表对所有操作对象统一使用该清单中的规范逻辑名，Patch 目标不再使用特殊标签名。该配置默认关闭。当前转换器可从逐帧人工复核 JSON 写入同步 HDF5 segment sidecar；scalar 与 streaming 索引构建均读取 sidecar 并填充 EmixIndex member.segment，annotations/ 纳入 fingerprint。尚未实现十任务的逐 episode 边界判定、自动生成或标注验收，因此现有数据仍不具备可直接启用 segment_wise 的标注覆盖。
+   - **关键前置工作**：RoboTwin 的 get_instance_object_map() 现按每个任务的 segment_object_actors() 登记所有被操作 actor；patch_target_actor() 只用于确认 Patch 目标对象身份，不改变该对象由 segment_object_actors() 指定的名称。标注和读取器不再接受历史名称 patch_target；旧标注及旧数据索引需重新生成，不把 scene_* 标签猜作任务对象。builder 已按 sidecar 为每个 member 写入 segment: {id, object}；接下来需按任务顺序结合 gripper 连续开合事件中点生成并复核逐帧标注。任务专属边界仍须逐项对照专家脚本和数据校准；不能仅靠通用夹爪阈值检测代替任务标注。
    - **当前标注实施计划**：
      1. 以新采集路径为准：确认十个任务的 instance_objects sidecar 对每个被操作 actor 使用 segment_object_actors() 中的规范名，且实例 ID 图与 RGB 同帧保存。旧标注和索引不作兼容读取；可用原始 actor ID 与可信对象表重新生成规范标注的，作为数据重建处理，否则整批重采。
      2. 每个 episode 读取 left_gripper 序列，并按任务 play_once() 的操作表检查事件数。每轮应有一次连续闭合事件和一次连续释放事件；以对应连续变化区间的中点作为 Pick/Place 边界。先输出事件波形和帧号供人工复核；缺事件、多事件、事件方向/顺序错误或轨迹失败时，不自动猜边界，单独修正或剔除该 episode。
      3. 经复核后生成逐帧 segment 标注：episode 开始到第一个 Pick 中点为第 0 个对象的 topick；Pick 中点到对应 Place 中点为该对象的 toplace；Place 中点到下一次 Pick 中点为下一对象的 topick；末次 Place 后标为 terminal，不参与分阶段增强。边界统一使用左闭右开区间，边界帧归入新阶段。segment.id 使用 operation_id + phase，segment.object 必须逐字匹配该 episode 实例对象表中的规范名。
-     4. 将逐帧 segment 与对象实例标签写入 episode 标注 sidecar，转换时与 RGB 使用同一帧选择、裁剪及缩放记录；构建 EmixIndex 时给每个 member 写入其源帧的 segment。开启 segment_wise 后仅保留两成员的 segment.id 和 object 完全相同的组；旧索引缺少 segment 时直接拒绝，须重建索引。
+     4. 将逐帧 segment 与对象实例标签写入 episode 标注 sidecar。当前转换器接受逐帧 JSON 标注，将其与实例标签按相同帧选择、裁剪及缩放记录同步写入 HDF5；scalar/streaming builder 均已按源帧给 EmixIndex member 填充 segment。开启 segment_wise 后仅保留两成员的 segment.id 和 object 完全相同的组；schema v2 索引在开启时直接拒绝，须重建 schema v3 索引。
      5. 每个任务至少人工核对所有开合事件边界及其前后帧、操作对象掩码是否非空、Patch/Mix 是否只修改目标对象像素，以及 terminal/无效 episode 是否被排除。全部任务标注与索引验收后，才把 segment_wise.enable 设为 true。
    - 不开发通用阶段分类器；固定阶段规则按任务维护，共用标注存储、索引字段、读取和对象掩码代码。segment_wise 开启后应与 detect_overlap 配合运行，后者检查当前 segment object 的两张掩码；候选替换必须仍满足相同 segment.id/object。
 
