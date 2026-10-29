@@ -6,7 +6,7 @@
 
 BaselineDP 不重训、不重评，直接引用 sin-v0-patch 正式批次的十个 100 集 metrics（共 387/1000，38.7%）：RGB 11%、size 6%、bread basket 22%、bread skillet 87%、burger fries 18%、can basket 56%、cans plasticbox 12%、dual shoes 30%、stack blocks 65%、stack bowls 80%。指标文件位于 Patch 批次 formal/outputs/eval/*_dp_baseline/*/metrics.json。
 
-四臂启动器 PID 147276，日志为 /root/autodl-tmp/sin-v0-seg/formal/logs/run_all_arms.log；2026-10-30 03:56 CST 从 seg_mix 开始，当前训练首任务 place_bread_skillet_left_oppo_cam。首次启动因模型输出目录落在项目 outputs 根外，被路径保护拒绝且未开始训练；配置已改到 /root/EMIX/outputs/sin-v0-seg/formal/ 并重启。GPU 0（RTX 5090）已分配约 1.5 GiB，训练进程正在初始化。EXP.md 登记了比较矩阵与共享 baseline。训练进度和评估结果待队列推进后补录。
+四臂启动器 PID 147276，日志为 /root/autodl-tmp/sin-v0-seg/formal/logs/run_all_arms.log；2026-10-30 03:56 CST 从 seg_mix 开始，当前训练首任务 place_bread_skillet_left_oppo_cam。首次启动因模型输出目录落在项目 outputs 根外，被路径保护拒绝且未开始训练；配置已改到 /root/EMIX/outputs/sin-v0-seg/formal/ 并重启。已进入训练优化步骤：seg_mix 首任务约 400/30,000 steps，RTX 5090 利用率约 66%、显存约 5.9 GiB，loss 持续更新；按当前速度首任务训练约需 40 分钟（不含评估）。EXP.md 登记了比较矩阵与共享 baseline。
 
 ## 2026-10-30：阶段标签端点修正、EmixIndex v3 规范化与十任务索引重建
 
