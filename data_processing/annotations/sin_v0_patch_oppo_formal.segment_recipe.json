@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "dataset": "sin-v0-patch-oppo/formal",
+  "status": "task operation order reviewed; stable-endpoint PICK/PLACE labels regenerated for 300 episodes per task; canonical instance sidecar remap and EmixIndex v3 rebuild pending",
+  "boundary_rule": {
+    "action_signal": "Final component of recorded action vector; open endpoint is 1 and closed endpoint is 0.",
+    "pick": "PICK ends at the first frame where the action signal reaches 0 and remains unchanged on the following frame.",
+    "place": "PLACE ends at the first frame where the action signal reaches 1 and remains unchanged on the following frame.",
+    "phase_assignment": "step_NN_pick includes episode start (or the previous PLACE endpoint plus one) through the PICK endpoint. step_NN_place starts at the following frame and includes the PLACE endpoint. Both phases use the manipulated object. The final post-PLACE return is unlabeled.",
+    "validation": "Each episode must start open, contain exactly ordered PICK/PLACE events for every recipe object, and finish open. This does not establish physical task success."
+  },
+  "tasks": {
+    "blocks_ranking_rgb_left_oppo_cam": [
+      "block1",
+      "block2",
+      "block3"
+    ],
+    "blocks_ranking_size_left_oppo_cam": [
+      "block3",
+      "block2",
+      "block1"
+    ],
+    "place_bread_basket_left_oppo_cam": [
+      "bread_0",
+      "bread_1"
+    ],
+    "place_bread_skillet_left_oppo_cam": [
+      "bread"
+    ],
+    "place_burger_fries_left_oppo_cam": [
+      "hamburg",
+      "frenchfries"
+    ],
+    "place_can_basket_left_oppo_cam": [
+      "can"
+    ],
+    "place_cans_plasticbox_left_oppo_cam": [
+      "can1",
+      "can2"
+    ],
+    "place_dual_shoes_left_oppo_cam": [
+      "left_shoe",
+      "right_shoe"
+    ],
+    "stack_blocks_two_left_oppo_cam": [
+      "block1",
+      "block2"
+    ],
+    "stack_bowls_two_left_oppo_cam": [
+      "bowl1",
+      "bowl2"
+    ]
+  }
+}
