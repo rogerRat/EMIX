@@ -1,5 +1,11 @@
 最后修改：2026-10-30
 
+## 2026-10-30：Patch 批次结果归档；sin-v0-seg 小时巡检已挂载
+
+sin-v0-patch 有效正式批次的 BaselineDP / EMIX Mix DP / Patch DP 十任务指标已统一核对，每臂均为 1,000 次评估。总体成功数为 387/1000、383/1000、383/1000（38.7%、38.3%、38.3%）；Patch 相对 baseline 3 胜、2 平、5 负，单 seed 结果只作描述性报告。详情与结论边界见 docs/RESULTS.md 和 docs/results/20261030-sin-v0-patch-results.md。30 份 metrics、当时留存的训练/评估产物、日志和配置已独立复制到 /root/autodl-tmp/archive/sin-v0-patch-oppo-20261030/；源输出、数据与索引未移动。
+
+sin-v0-seg 小时巡检在 WSL 中无法使用 Codex：Codex CLI 登录刷新被服务端以 unsupported_country_region_territory（403）拒绝，因此未在 WSL 安装无效巡检任务，也保留其原有 crontab。按用户的本机回退要求，已在本机 scratch 目录运行 Codex 的只读 SSH 检查，并建立 tmux 会话 sin-v0-seg-watch。WSL 本身可用，但 macOS crontab 安装在当前执行环境挂起；现改用用户级 LaunchAgent，每 3600 秒触发同一个 Codex SSH 巡检脚本。脚本只通过 ssh emix 访问/修复项目；本机文件仅保存 prompt、日志和调度配置。会话可用 tmux attach -t sin-v0-seg-watch 查看。巡检规则保留四臂配置和训练协议一致性，不为追 GPU 利用率而改动 batch/seed/optimizer/num_workers 等控制条件。
+
 ## 2026-10-30：sin-v0-seg 四臂训练/评估启动
 
 本批固定四个新处理臂（每臂十任务、seed 0、30,000 steps、每任务评估 100 集）：Segment-wise Mix、Segment-wise Patch、Segment-wise Mix + overlap refuse 0.33、Segment-wise Patch + overlap refuse 0.33。四臂都以 v3 索引筛选同阶段且 segment.object 相同的候选；Mix 仅对阶段目标物体区域做线性混合，Patch 对该物体区域硬拼贴。overlap 指两帧该对象掩码的 IoU；高于阈值即拒绝并继续找候选，候选均超阈值时取最低 IoU 并记录 fallback。实现和四个 runbook 已提交为 commit 33e6579；输出根位于 outputs/sin-v0-seg/formal/。
