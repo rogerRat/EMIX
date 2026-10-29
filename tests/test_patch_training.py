@@ -228,7 +228,7 @@ class PatchAnnotationReaderTests(unittest.TestCase):
             labels[1, 0, 1] = 1
             labels[1, 1, 0] = 2
             with h5py.File(path, "w") as handle:
-                handle.attrs["schema_version"] = 1
+                handle.attrs["schema_version"] = 2
                 handle.attrs["objects"] = json.dumps(["background", "block1", "other_object"])
                 handle.create_dataset("labels", data=labels, chunks=(1, 2, 2), compression="gzip")
             reader = PatchAnnotationReader(Path(directory), object(), ([0, 3], [3, 6]))

@@ -46,7 +46,7 @@ class PatchAnnotationReader:
                     required = {"schema_version", "objects"}
                     if not required.issubset(handle.attrs) or "labels" not in handle:
                         raise ValueError(f"Patch annotation file lacks required fields: {path}")
-                    if int(handle.attrs["schema_version"]) != 1:
+                    if int(handle.attrs["schema_version"]) not in (1, 2):
                         raise ValueError(f"Unsupported patch annotation schema in {path}")
                     objects = json.loads(handle.attrs["objects"])
                     if not isinstance(objects, list) or not objects or objects[0] != "background":
