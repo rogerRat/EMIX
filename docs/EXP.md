@@ -18,7 +18,7 @@
 |---:|---|---|---|
 | 1 | `sin-v0-noise` | 显式高斯图像噪声是否改善 EMIX | **已完成**；结果未显示 EMIX 在该噪声实验中有提升（按最新实验结论）。历史配置和旧状态快照见第二部分，不再作为待执行计划。 |
 | 2 | `sin-v0-patch` | 把 EMIX 的线性透明度混合替换为对象掩码硬拼贴，是否改善结果 | **已完成；有效正式批次完成训练和评测，错误掩码批次作废**。 |
-| 3 | `sin-v0-seg` | 按 pick/place 阶段和当前目标物体选择增强对象，是否改善结果 | 准备中；阶段标签已生成，规范化 sidecar 与 v3 索引正在构建，尚未训练。 |
+| 3 | `sin-v0-seg` | 按 pick/place 阶段和当前目标物体选择增强对象，是否改善结果 | 数据与十任务 EmixIndex v3 已准备并通过结构/分段候选审计；尚未训练。 |
 | 4 | `sin-v0-task-expansion` | 将方法扩展到 push/pull/open/close 多物体任务 | 后续方向；待前述阶段增强验证后规划。 |
 
 噪声结果的方向性结论来自最新用户确认；旧运行状态记录曾显示 EMIX 双侧评估未完成，不能据旧快照覆盖本节结论。当前没有在本次工作中重算或补录噪声数值。
@@ -127,9 +127,9 @@
 
 2026-10-30：sin-v0-patch 正式批次已完成；此前因掩码错误作废的批次不纳入结果。detect_overlap 的拼贴拒绝链路已实现，默认关闭；后续 Patch 与分阶段增强都应评估是否启用。
 
-当前准备 sin-v0-seg：基于任务实现审阅了十个任务的操作物体顺序；对 3000 个 episode 按夹爪动作结束点重新生成阶段标签；历史实例 sidecar 通过独立硬链接副本规范化为任务对象名，并与逐帧阶段标签合并。旧源数据和 v2 索引保留，新的数据副本和索引放在 formal/lerobot_v3/ 与 formal/emix_index_v3/。
+sin-v0-seg 的数据准备已完成：基于任务实现审阅了十个任务的操作物体顺序；对 3000 个 episode 按夹爪动作结束点生成阶段标签；历史实例 sidecar 通过独立硬链接副本规范化为任务对象名，并与逐帧阶段标签合并。旧源数据和 v2 索引保留，新的数据副本和索引放在 formal/lerobot_v3/ 与 formal/emix_index_v3/。
 
-EmixIndex v3 的唯一规范为 embodied_mixup/candidates/emix_index_spec.py，结构与规则说明见 docs/dev/EMIX_INDEX_SPEC.md。v2 只作为历史读取格式；新建索引输出 v3。当前正在重建十个带阶段元数据的索引。阶段边界、任务对象顺序及动作数据核对见 docs/dev/TASK_SEGMENT_ANNOTATION.md。
+EmixIndex v3 的唯一规范为 embodied_mixup/candidates/emix_index_spec.py，结构与规则说明见 docs/dev/EMIX_INDEX_SPEC.md。v2 只作为历史读取格式；新建索引输出 v3。十个带阶段元数据的索引均已重建并通过 v3 完整校验：共 3,000,000 个候选组、40 个任务阶段定义；其中 1,286,164 组的所有成员具有相同 segment.id 与 segment.object，可供 Segment-wise 配对筛选。训练尚未启动。阶段边界、任务对象顺序及动作数据核对见 docs/dev/TASK_SEGMENT_ANNOTATION.md。
 
 ## 2.7 sin-v0-seg：阶段对象约束的 EMIX 增强
 
@@ -141,7 +141,7 @@ EmixIndex v3 的唯一规范为 embodied_mixup/candidates/emix_index_spec.py，�
 
 本次正式数据为十任务、每任务 300 个 episode。训练启动门槛：所有新 sidecar 的实例掩码对象名均规范、segment 数组与帧数一致；v3 索引含逐成员 segment 且源指纹覆盖 annotations；每任务均有至少一组双方 segment 匹配的可训练候选；配置差异审计确认只有 Segment-wise 选择规则变化。未满足门槛前，sin-v0-seg 状态保持准备中，不报告实验结果。
 
-当前进度：阶段标注脚本与配方已在 commit f5929d1；新 EmixIndex v3 规范、sidecar 数据副本和十任务 v3 索引正在准备。
+当前进度：阶段标注脚本与配方已在 commit f5929d1；EmixIndex v3 规范、数据副本准备及十任务索引已在 commit 6e4ca4a 和后续构建中完成。正式训练仍待配置差异审计与启动。
 ---
 
 以下内容保留 2026-09 V0 的固定参数、运行记录和历史决策，作为 sin-v0 的参考，不再代表当前待执行实验计划。与第一部分冲突时，以 sin-v0 现行标准及其最新状态为准。

@@ -10,7 +10,9 @@ commit f5929d1 已提交阶段标签生成器、十任务对象顺序配方与�
 
 新增规范模块 embodied_mixup/candidates/emix_index_spec.py，以 TypedDict、JSON Schema 与增量 validator 定义 v3；emix_index.py、streaming builder 与保存/加载路径接入校验。当前构建器只写 v3、v2 保留为历史只读格式；说明见 docs/dev/EMIX_INDEX_SPEC.md。docs/EXP.md 新增实验代号 sin-v0-seg 的对照计划和开训门槛。
 
-十任务索引正在用原有索引参数重建到 formal/emix_index_v3/<task>/emix_index.json。重建后还需核验每个索引的 schema_version、segment_annotations 元数据、segment 覆盖、源指纹与候选配对；训练尚未启动。阶段标签实现与之前工作提交为 f5929d1；本次 v3 规范、转换器与实验记录将在索引核验后提交。
+十任务索引已按原有构建参数重建到 formal/emix_index_v3/<task>/emix_index.json，并逐个通过 EmixIndex v3 完整结构校验。每个索引均含 300,000 组、正确的 V3.0 数据来源、启用阶段标注的配置和 2–6 个阶段定义；所有任务均有可用的同阶段候选。十任务合计 3,000,000 组，其中 1,286,164 组的全部成员具有完全匹配的 segment.id 与 segment.object。训练尚未启动，需继续完成训练配置差异审计。阶段标签实现已提交为 f5929d1；v3 规范、数据准备器与进展记录已提交为 6e4ca4a。
+
+逐任务 segment-wise 候选组数：blocks_ranking_rgb 95,981；blocks_ranking_size 95,825；place_bread_basket 125,281；place_bread_skillet 88,315；place_burger_fries 128,278；place_can_basket 37,801；place_cans_plasticbox 130,614；place_dual_shoes 134,382；stack_blocks_two 215,177；stack_bowls_two 234,510。原始数据及 v2 索引保留不变；v3 数据副本和索引分别位于 formal/lerobot_v3/ 与 formal/emix_index_v3/。
 
 
 ## 2026-10-22 12:34 CST：Patch 第二次 BUG 批次作废并重启
