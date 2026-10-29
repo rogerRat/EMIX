@@ -571,7 +571,9 @@ def _build_emix_dataset(cfg: EmixTrainConfig):
         annotation_root=str(getattr(cfg.policy_cfg, "annotation_root", "")),
         detect_overlap_enable=bool(getattr(cfg.policy_cfg, "detect_overlap_enable", False)),
         detect_overlap_refuse_ratio=float(getattr(cfg.policy_cfg, "detect_overlap_refuse_ratio", 0.5)),
+        segment_wise_enable=bool(getattr(cfg.policy_cfg, "segment_wise_enable", False)),
         seed=0,
+        video_backend=cfg.video_backend,
     )
     dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))
     return make_emix_loader(
