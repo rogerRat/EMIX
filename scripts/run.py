@@ -713,6 +713,9 @@ def train_config(task: str, config: dict[str, Any], *, emix: bool, patch: bool =
         if key in training:
             payload["policy"][key] = copy.deepcopy(training[key])
     payload["dataset"] = {"repo_id": task, "root": str(dataset)}
+    # This host has PyAV linked to FFmpeg shared libraries, while the installed
+    # TorchCodec wheel may be present without its matching libav runtime.
+    payload["dataset"]["video_backend"] = str(training.get("video_backend", "pyav"))
     if "protocol" in config:
         payload["protocol"] = copy.deepcopy(config["protocol"])
     if "image_noise" in training:
