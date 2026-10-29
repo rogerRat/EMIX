@@ -237,3 +237,10 @@ RoboTwin 默认有 click bell 单臂任务，但 baseline 和 EMIX 都很容易�
 增加到 500 条轨迹后，又发现交点大多集中在轨迹末尾。后来调整任务，让场景更多样，但专家成功率也更低，配对情况没有明显改善。怀疑这与任务流程和 RoboTwin 的实现有关，还没有确认。
 
 继续用这批数据训练，baseline 成功率为 88%，EMIX 为 87%。只差 1 点，可能来自随机波动，目前不足以说明两者有稳定差别。
+
+
+## 2026-10-30 05:12 +0800 — sin-v0-seg monitor
+
+- seg_mix task place_bread_skillet_left_oppo_cam: flow attempt 1 failed at 03:56:14 during train config validation because its output directory was under /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs, outside the required /root/autodl-tmp/outputs root. Flow attempt 2 started at 03:56:42 and recovered without monitor intervention; its 30,000-step checkpoint completed at 04:36:38.
+- Evaluation is active for the same task (100 episodes, seed 0); flow log reports episode 24/100 at 05:12. Episode videos 0000–0023 are present, with episode 0023 still being written. seg_patch, seg_mix_overlap033, and seg_patch_overlap033 have not started.
+- No completed metrics files are present for the four arms yet (0/40); this is in-progress status, not an experiment result. GPU 0 at 05:11:34: 17% utilization, 5,770 MiB / 32,607 MiB. No settings or processes changed.
