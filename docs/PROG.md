@@ -1,5 +1,13 @@
 最后修改：2026-10-30
 
+## 2026-10-30：sin-v0-seg 四臂训练/评估启动
+
+本批固定四个新处理臂（每臂十任务、seed 0、30,000 steps、每任务评估 100 集）：Segment-wise Mix、Segment-wise Patch、Segment-wise Mix + overlap refuse 0.33、Segment-wise Patch + overlap refuse 0.33。四臂都以 v3 索引筛选同阶段且 segment.object 相同的候选；Mix 仅对阶段目标物体区域做线性混合，Patch 对该物体区域硬拼贴。overlap 指两帧该对象掩码的 IoU；高于阈值即拒绝并继续找候选，候选均超阈值时取最低 IoU 并记录 fallback。实现和四个 runbook 已提交为 commit 33e6579；输出根位于 outputs/sin-v0-seg/formal/。
+
+BaselineDP 不重训、不重评，直接引用 sin-v0-patch 正式批次的十个 100 集 metrics（共 387/1000，38.7%）：RGB 11%、size 6%、bread basket 22%、bread skillet 87%、burger fries 18%、can basket 56%、cans plasticbox 12%、dual shoes 30%、stack blocks 65%、stack bowls 80%。指标文件位于 Patch 批次 formal/outputs/eval/*_dp_baseline/*/metrics.json。
+
+四臂启动器 PID 147276，日志为 /root/autodl-tmp/sin-v0-seg/formal/logs/run_all_arms.log；2026-10-30 03:56 CST 从 seg_mix 开始，当前训练首任务 place_bread_skillet_left_oppo_cam。首次启动因模型输出目录落在项目 outputs 根外，被路径保护拒绝且未开始训练；配置已改到 /root/EMIX/outputs/sin-v0-seg/formal/ 并重启。GPU 0（RTX 5090）已分配约 1.5 GiB，训练进程正在初始化。EXP.md 登记了比较矩阵与共享 baseline。训练进度和评估结果待队列推进后补录。
+
 ## 2026-10-30：阶段标签端点修正、EmixIndex v3 规范化与十任务索引重建
 
 阶段边界按用户修正为夹爪命令结束点：PICK 的闭合信号首次到达 0 且下一帧完全不变；PLACE 的放松信号首次到达 1 且下一帧不变。端点帧归入该 PICK/PLACE 阶段，下一阶段从下一帧开始。每个任务按 task code 的固定操作顺序，为每个对象生成 PICK 与 PLACE 两段；最终 PLACE 后回程留空。

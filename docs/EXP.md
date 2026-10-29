@@ -18,7 +18,7 @@
 |---:|---|---|---|
 | 1 | `sin-v0-noise` | 显式高斯图像噪声是否改善 EMIX | **已完成**；结果未显示 EMIX 在该噪声实验中有提升（按最新实验结论）。历史配置和旧状态快照见第二部分，不再作为待执行计划。 |
 | 2 | `sin-v0-patch` | 把 EMIX 的线性透明度混合替换为对象掩码硬拼贴，是否改善结果 | **已完成；有效正式批次完成训练和评测，错误掩码批次作废**。 |
-| 3 | `sin-v0-seg` | 按 pick/place 阶段和当前目标物体选择增强对象，是否改善结果 | 数据与十任务 EmixIndex v3 已准备并通过结构/分段候选审计；尚未训练。 |
+| 3 | sin-v0-seg | 按 pick/place 阶段和当前目标物体选择增强对象，是否改善结果 | 四个处理臂已启动训练/评估；BaselineDP 复用 sin-v0-patch 的十任务结果。 |
 | 4 | `sin-v0-task-expansion` | 将方法扩展到 push/pull/open/close 多物体任务 | 后续方向；待前述阶段增强验证后规划。 |
 
 噪声结果的方向性结论来自最新用户确认；旧运行状态记录曾显示 EMIX 双侧评估未完成，不能据旧快照覆盖本节结论。当前没有在本次工作中重算或补录噪声数值。
@@ -141,7 +141,7 @@ EmixIndex v3 的唯一规范为 embodied_mixup/candidates/emix_index_spec.py，�
 
 本次正式数据为十任务、每任务 300 个 episode。启动门槛已满足：sidecar 对象名规范且 segment 数组与帧数一致；v3 索引含逐成员 segment 且源指纹覆盖 annotations；十任务均有同阶段候选；四个处理臂配置分别对应 Mix/Patch × overlap refuse 关闭/0.33，所有臂均启用 segment-wise。
 
-当前进度：阶段标注脚本与配方已在 commit f5929d1；EmixIndex v3 规范、数据副本准备及十任务索引已在 commit 6e4ca4a 和后续构建中完成。sin-v0-seg 四个处理臂配置已补齐；基线复用 sin-v0-patch 的 BaselineDP 评估。正式训练/评估启动后在此记录状态和结果。
+当前进度：阶段标注脚本与配方已在 commit f5929d1；EmixIndex v3 规范、数据副本准备及十任务索引已在 commit 6e4ca4a 和后续构建中完成。sin-v0-seg 四个处理臂配置已在 commit 33e6579 固定；BaselineDP 复用 sin-v0-patch 的十任务 100 集评估。四臂已于 2026-10-30 03:56 CST 启动，按 seg_mix → seg_patch → seg_mix_overlap033 → seg_patch_overlap033 的顺序串行运行；当前结果以各臂日志与 metrics 为准。
 ---
 
 以下内容保留 2026-09 V0 的固定参数、运行记录和历史决策，作为 sin-v0 的参考，不再代表当前待执行实验计划。与第一部分冲突时，以 sin-v0 现行标准及其最新状态为准。
