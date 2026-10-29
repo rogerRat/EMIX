@@ -424,9 +424,10 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
         if loader_cfg.mixup_image_mode not in ("linear", "patch"):
             raise ValueError("mixup_image_mode must be 'linear' or 'patch'")
         self.annotation_reader = None
-        if loader_cfg.mixup_image_mode == "patch" or loader_cfg.segment_wise_enable:
+        if (loader_cfg.mixup_image_mode == "patch" or loader_cfg.segment_wise_enable
+                or loader_cfg.detect_overlap_enable):
             if not loader_cfg.annotation_root:
-                raise ValueError("annotation_root is required for patch augmentation")
+                raise ValueError("annotation_root is required for masked augmentation or overlap refusal")
             from .patch_annotations import PatchAnnotationReader
             self.annotation_reader = PatchAnnotationReader(
                 Path(loader_cfg.annotation_root), self.reader.dataset,
@@ -438,8 +439,11 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             raise ValueError("segment_wise.enable requires instance annotation reader")
         if loader_cfg.segment_wise_enable and not self.records:
             raise ValueError("segment_wise.enable found no groups with matching segment annotations")
-        if loader_cfg.detect_overlap_enable and loader_cfg.mixup_image_mode != "patch":
-            raise ValueError("detect_overlap can only be enabled with patch image mode")
+        if (loader_cfg.detect_overlap_enable and loader_cfg.mixup_image_mode != "patch"
+                and not loader_cfg.segment_wise_enable):
+            raise ValueError(
+                "detect_overlap requires patch image mode or segment_wise.enable"
+            )
 
         alpha_mode = loader_cfg.mixup_alpha_mode
         if alpha_mode not in ("beta", "fixed"):
@@ -558,7 +562,7 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
         record = self.records[idx]
         patch_mask = None
         overlap_fallback = None
-        if self.loader_cfg.mixup_image_mode == "patch" and self.loader_cfg.detect_overlap_enable:
+        if self.loader_cfg.detect_overlap_enable:
             record, patch_mask, overlap_fallback = self._resolve_patch_pair(idx, record)
         group = record.group
         member_0_id, member_1_id = record.member_ids

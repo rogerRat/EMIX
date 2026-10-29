@@ -135,13 +135,13 @@ EmixIndex v3 的唯一规范为 embodied_mixup/candidates/emix_index_spec.py，�
 
 实验代号为 sin-v0-seg。研究问题是：当配对画面属于同一任务阶段，并且拼贴/混合只使用该阶段正在操作的物体掩码时，是否比不做阶段对象约束的对象增强更有效。
 
-正式主比较计划为全任务对象 Patch 与 Segment-wise Patch。两臂沿用 sin-v0-patch 的数据、策略、优化器、训练步数、调度、候选索引构建参数和评估条件；唯一处理差异是分阶段臂启用 segment_wise.enable=true，要求配对双方的 segment.id 和 segment.object 相同，并只增强该 object 对应的实例掩码。vanilla / 线性 Mix 可沿用现有结果作为背景参照，不替代同批 Patch 对照。detect_overlap 当前默认关闭，是否纳入该实验须作为独立因素决定，不能混入唯一变量对照。
+本批包含四个新训练臂，均覆盖十个任务：① Segment-wise Mix DP；② Segment-wise Patch DP；③ Segment-wise Mix + overlap refuse 0.33 DP；④ Segment-wise Patch + overlap refuse 0.33 DP。每一臂均要求配对双方 segment.id 与 segment.object 相同，增强只作用于该阶段目标物体。Mix 保持线性混合机制，Patch 保持对象掩码硬拼贴机制；overlap refuse 对象掩码的 IoU 超过 0.33 时拒绝当前候选并顺延搜索，若候选全部超阈值则选 IoU 最低者并记录回退。四臂共用 sin-v0-patch 已完成的十任务 BaselineDP 结果作为参考，不再训练或评估新的 BaselineDP；因此 BaselineDP 是共享参照，不计入四个新处理臂。四臂沿用 sin-v0-patch 的数据场景、策略、优化器、训练步数、调度、候选索引构建参数和评估条件。
 
 分阶段的规范划分是：每次夹爪闭合到动作信号稳定点之前（含初始接近及闭合过程）属于该次 PICK Segment；夹爪从稳定闭合到放松动作稳定点之间属于该次 PLACE Segment，含搬运、放置接近及释放过程。端点帧归入刚结束的阶段，下一阶段从下一帧开始。两段都标记被操作物体；最终 PLACE 后回程不标注。任务级对象顺序见 docs/dev/TASK_SEGMENT_ANNOTATION.md。
 
-本次正式数据为十任务、每任务 300 个 episode。训练启动门槛：所有新 sidecar 的实例掩码对象名均规范、segment 数组与帧数一致；v3 索引含逐成员 segment 且源指纹覆盖 annotations；每任务均有至少一组双方 segment 匹配的可训练候选；配置差异审计确认只有 Segment-wise 选择规则变化。未满足门槛前，sin-v0-seg 状态保持准备中，不报告实验结果。
+本次正式数据为十任务、每任务 300 个 episode。启动门槛已满足：sidecar 对象名规范且 segment 数组与帧数一致；v3 索引含逐成员 segment 且源指纹覆盖 annotations；十任务均有同阶段候选；四个处理臂配置分别对应 Mix/Patch × overlap refuse 关闭/0.33，所有臂均启用 segment-wise。
 
-当前进度：阶段标注脚本与配方已在 commit f5929d1；EmixIndex v3 规范、数据副本准备及十任务索引已在 commit 6e4ca4a 和后续构建中完成。正式训练仍待配置差异审计与启动。
+当前进度：阶段标注脚本与配方已在 commit f5929d1；EmixIndex v3 规范、数据副本准备及十任务索引已在 commit 6e4ca4a 和后续构建中完成。sin-v0-seg 四个处理臂配置已补齐；基线复用 sin-v0-patch 的 BaselineDP 评估。正式训练/评估启动后在此记录状态和结果。
 ---
 
 以下内容保留 2026-09 V0 的固定参数、运行记录和历史决策，作为 sin-v0 的参考，不再代表当前待执行实验计划。与第一部分冲突时，以 sin-v0 现行标准及其最新状态为准。

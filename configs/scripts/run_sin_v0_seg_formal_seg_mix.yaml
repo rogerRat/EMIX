@@ -1,0 +1,134 @@
+emix:
+  alpha_mode: beta
+  beta: 2
+  loss_weight: 1.0
+  scheduler:
+    end_batch_prob: 0.0
+    start_batch_prob: 0.6
+    type: logarithmic
+  state_mode: anchor
+  visual_keys:
+  - observation.images.head_camera
+  debug:
+    enabled: true
+    max_samples: 32
+    every_n_steps: 10000
+    image_keys: null
+    max_action_steps: 1
+    action_xyz_indices:
+    - 0
+    - 1
+    - 2
+    action_is_delta: true
+    min_display_fraction: 0.12
+  segment_wise:
+    enable: true
+  detect_overlap:
+    enable: false
+    refuse_ratio: 0.33
+environments:
+  conda_executable: auto
+  evaluation: emix-twin
+  preprocessing: emix
+  robotwin: emix-twin
+  training: emix
+gpu_batches:
+  '0':
+  - blocks_ranking_rgb_left_oppo_cam
+  - place_burger_fries_left_oppo_cam
+  - place_cans_plasticbox_left_oppo_cam
+  - stack_blocks_two_left_oppo_cam
+  - blocks_ranking_size_left_oppo_cam
+  - place_bread_basket_left_oppo_cam
+  - place_bread_skillet_left_oppo_cam
+  - place_can_basket_left_oppo_cam
+  - place_dual_shoes_left_oppo_cam
+  - stack_bowls_two_left_oppo_cam
+logging:
+  rotate_bytes: 52428800
+pipeline:
+  collection_fps: 17
+  episodes_per_task: 300
+  evaluation_episodes: 100
+  evaluation_seed: 0
+  image_height: 84
+  image_width: 84
+  instance_annotations: true
+  left_qpos_dim: 7
+  piper_distance: 0.6
+  policies:
+  - emix
+  save_evaluation_video: true
+project:
+  collection_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/robotwin/{task}
+  dataset_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/lerobot_v3/{task}
+  eval_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs/eval/{task}
+  index_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/emix_index_v3/{task}
+  log_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/logs
+  robotwin_root: third_party/RoboTwin
+  runtime_config_root: configs/scripts/run_sin_v0_seg_formal_seg_mix/{task}
+  train_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs/train/{task}
+  run_label: sin-v0-seg-seg_mix
+training:
+  batch_size: 64
+  horizon: 16
+  log_freq: 100
+  n_action_steps: 8
+  n_obs_steps: 1
+  num_workers: 16
+  optimizer_lr: 0.0001
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  save_freq: 5000
+  seed: 0
+  steps: 30000
+  vision_backbone: resnet18
+  video_backend: torchcodec
+  crop_shape: null
+  crop_is_random: true
+  down_dims:
+  - 512
+  - 1024
+  - 2048
+  kernel_size: 5
+  n_groups: 8
+  diffusion_step_embed_dim: 128
+  num_train_timesteps: 100
+  num_inference_steps: 100
+  noise_scheduler_type: DDPM
+  beta_schedule: squaredcos_cap_v2
+  prediction_type: epsilon
+  clip_sample: true
+  optimizer_betas:
+  - 0.95
+  - 0.999
+  optimizer_eps: 1.0e-08
+  optimizer_weight_decay: 1.0e-06
+  scheduler_name: cosine
+  scheduler_warmup_steps: 500
+  image_noise:
+    enabled: false
+  encoder_debug:
+    enabled: true
+    interval: 10000
+    max_samples: 4
+visualization:
+  camera: isometric
+  chrome_timeout_s: 600
+  device_scale_factor: 2
+  max_points: 10000
+  output_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs/intersections
+  png_margin: 24
+  skip_click_images: true
+  virtual_time_budget_ms: 120000
+  window_height: 2800
+  window_width: 2400
+protocol:
+  name: sin-v0-seg
+  timestamp: '261030'
+  view: left_oppo_cam
+  policies:
+  - emix
+  training_seed: 0
+  training_steps: 30000
+  evaluation_episodes: 100
+  evaluation_seed: 0

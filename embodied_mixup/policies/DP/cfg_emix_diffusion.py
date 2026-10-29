@@ -48,8 +48,10 @@ class EmixDiffusionConfig(DiffusionConfig):
             raise ValueError("detect_overlap.refuse_ratio must be in [0.0, 1.0]")
         if self.segment_wise_enable and not self.annotation_root:
             raise ValueError("annotation_root is required when segment_wise.enable is true")
-        if self.detect_overlap_enable and self.mixup_image_mode != "patch":
-            raise ValueError("detect_overlap can only be enabled with patch image mode")
+        if self.detect_overlap_enable and self.mixup_image_mode != "patch" and not self.segment_wise_enable:
+            raise ValueError(
+                "detect_overlap requires patch image mode or segment_wise.enable"
+            )
 
     def validate_features(self) -> None:
         if self.robot_state_feature is None:

@@ -745,7 +745,14 @@ def train_config(task: str, config: dict[str, Any], *, emix: bool, patch: bool =
                 "alpha_value": None, "loss_weight": emix_cfg["loss_weight"],
                 "visual_keys": emix_cfg["visual_keys"], "state_mode": emix_cfg["state_mode"],
                 "image_mode": "patch" if patch else "linear",
-                "annotation_root": str(dataset / "annotations") if patch else "",
+                "annotation_root": (
+                    str(dataset / "annotations")
+                    if patch or (emix_cfg.get("segment_wise") or {}).get("enable", False)
+                    or (emix_cfg.get("detect_overlap") or {}).get("enable", False)
+                    else ""
+                ),
+                "segment_wise": copy.deepcopy(emix_cfg.get("segment_wise", {"enable": False})),
+                "detect_overlap": copy.deepcopy(emix_cfg.get("detect_overlap", {"enable": False, "refuse_ratio": 0.5})),
             },
             "training": {"enabled": True, "seed": training["seed"], "training_mode": "mixed", "scheduler": copy.deepcopy(emix_cfg["scheduler"])},
         }
