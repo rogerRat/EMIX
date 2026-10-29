@@ -48,6 +48,7 @@ class EmixTrainConfig:
     policy_cfg: Any
     dataset_root: str
     dataset_repo_id: str
+    video_backend: str | None
     output_dir: Path
     batch_size: int
     num_workers: int
@@ -88,9 +89,14 @@ class SaveableTrainConfig:
         training_mode: str,
         image_noise: ImageNoiseConfig | None = None,
         protocol: dict[str, Any] | None = None,
+        video_backend: str | None = None,
     ):
         self.policy = policy_cfg
-        self.dataset = type("DatasetCfg", (), {"root": dataset_root, "repo_id": dataset_repo_id})()
+        self.dataset = type(
+            "DatasetCfg",
+            (),
+            {"root": dataset_root, "repo_id": dataset_repo_id, "video_backend": video_backend},
+        )()
         self.steps = steps
         self.optimizer = optimizer
         self.scheduler = scheduler
@@ -103,7 +109,11 @@ class SaveableTrainConfig:
     def save_pretrained(self, save_directory: Path) -> None:
         payload = {
             "policy": {"type": self.policy.type},
-            "dataset": {"root": self.dataset.root, "repo_id": self.dataset.repo_id},
+            "dataset": {
+                "root": self.dataset.root,
+                "repo_id": self.dataset.repo_id,
+                "video_backend": self.dataset.video_backend,
+            },
             "steps": self.steps,
             "training_mode": self.training_mode,
             "image_noise": self.image_noise.to_dict(),
@@ -479,6 +489,10 @@ def _build_train_config(
         encoder_debug=encoder_debug,
         image_noise=ImageNoiseConfig.from_payload(train_value("image_noise", None)),
         protocol=dict(protocol),
+        video_backend=(
+            None if (payload.get("dataset") or {}).get("video_backend") is None
+            else str(payload["dataset"]["video_backend"])
+        ),
     )
 
 
@@ -532,6 +546,7 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
                 ds_meta.features,
                 float(ds_meta.info["fps"]),
             ),
+            video_backend=cfg.video_backend,
         )
     return ds_meta, dataset, policy
 
@@ -668,6 +683,7 @@ def _write_train_config_snapshot(cfg: EmixTrainConfig) -> Path:
         "policy_type": cfg.policy_cfg.type,
         "dataset_root": cfg.dataset_root,
         "dataset_repo_id": cfg.dataset_repo_id,
+        "video_backend": cfg.video_backend,
         "steps": cfg.steps,
         "batch_size": cfg.batch_size,
         "num_workers": cfg.num_workers,
@@ -867,6 +883,7 @@ def train(
         training_mode=cfg.training_mode,
         image_noise=cfg.image_noise,
         protocol=cfg.protocol,
+        video_backend=cfg.video_backend,
     )
 
     total_steps = int(resume_cfg.total_steps_override) if resume_cfg.total_steps_override is not None else int(cfg.steps)
