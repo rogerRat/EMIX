@@ -50,5 +50,47 @@
       "bowl1",
       "bowl2"
     ]
+  },
+  "object_actor_ids": {
+    "blocks_ranking_rgb_left_oppo_cam": {
+      "block1": 33,
+      "block2": 34,
+      "block3": 35
+    },
+    "blocks_ranking_size_left_oppo_cam": {
+      "block1": 33,
+      "block2": 34,
+      "block3": 35
+    },
+    "place_bread_basket_left_oppo_cam": {
+      "bread_0": 34,
+      "bread_1": 35
+    },
+    "place_bread_skillet_left_oppo_cam": {
+      "bread": 33
+    },
+    "place_burger_fries_left_oppo_cam": {
+      "hamburg": 34,
+      "frenchfries": 35
+    },
+    "place_can_basket_left_oppo_cam": {
+      "can": 34
+    },
+    "place_cans_plasticbox_left_oppo_cam": {
+      "can1": 34,
+      "can2": 35
+    },
+    "place_dual_shoes_left_oppo_cam": {
+      "left_shoe": 34,
+      "right_shoe": 35
+    },
+    "stack_blocks_two_left_oppo_cam": {
+      "block1": 33,
+      "block2": 34
+    },
+    "stack_bowls_two_left_oppo_cam": {
+      "bowl1": 33,
+      "bowl2": 34
+    }
   }
 }

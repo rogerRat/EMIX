@@ -1,51 +1,108 @@
-# EmixIndex Specification
+# EmixIndex v3 Specification
 
-## Versions
+## Normative definition
 
-- Schema v2: existing group and source metadata, with no segment contract.
-- Schema v3: same root shape, with optional per-member operation segment metadata.
-- Readers accept v2 and v3. segment_wise.enable=true requires v3 and matching labels. New builders emit v3.
-- v2 fingerprints retain their recorded included_roots; new fingerprints include meta, data, videos, and annotations.
+The normative persisted data structure and runtime validator are defined in
+`embodied_mixup/candidates/emix_index_spec.py`. The matching Python
+dataclasses and serialization live in `embodied_mixup/candidates/emix_index.py`.
+The streaming index builder validates the v3 public record and every emitted
+cross-point group against the normative module. This document explains that
+contract; changes to the Python specification, dataclasses, builder, reader, and
+this document must be kept in sync.
 
-## Member reference
+All new EmixIndex artifacts use `public.schema_version = 3` and
+`public.source_dataset_version = "V3.0"`. Reader support for schema v2 is
+legacy read-only compatibility; v2 is not emitted by current builders and does
+not satisfy segment-wise training requirements.
 
-Each content.cross_point_groups[].members[] record has the existing source dataset, episode, and frame fields, plus optional segment: {id: string, object: string}.
+## Root structure
 
-segment is omitted when the frame has no reviewed segment label. When present, it must contain exactly two nonempty strings:
+An EmixIndex JSON document has exactly two root fields:
 
-- id: task-specific, stable phase ID assigned by reviewed annotation.
-- object: canonical manipulated-object name in the same episode's instance annotation object table.
+- `public`: index identity, schema and source declarations, and build metadata.
+- `content`: the ordered array of cross-point groups.
 
-object may not be background, a scene_* label, or the removed historical name patch_target. A segment object must exist in the sidecar object table. Segment IDs are task-defined and must identify semantically corresponding phases across episodes when those episodes are intended to mix.
+### Public record
 
-## Annotation sidecar input to the builder
+`public` contains:
 
-For source episode N, the builder reads annotations/episode_N.instances.h5.
+- `id`: nonempty index identifier.
+- `schema_version`: integer `3`.
+- `created_at`: nonempty timestamp string.
+- `source_dataset_version`: `V3.0`.
+- `source_datasets`: one or more source declarations. Each declares
+  `repo_id`, exact `root`, source `hash` (string or null), and `media`.
+- `metadata`: build summary, configuration snapshot, source fingerprint, and
+  `segment_annotations` summary or null.
 
-The HDF5 sidecar must contain:
+A source `media` record declares nonempty camera keys, per-frame alignment,
+video path pattern, and storage format. The fingerprint includes `meta/`,
+`data/`, `videos/`, and `annotations/`.
 
-- schema_version >= 2
-- objects attribute: JSON array of canonical object names
-- segment_id: one UTF-8 string per converted LeRobot frame
-- segment_object: one UTF-8 string per converted LeRobot frame
+When segments are supplied, `metadata.segment_annotations` records the sidecar
+pattern, fields `segment_id` and `segment_object`, and the number of unique
+(id, object) pairs. The build configuration records
+`segment_annotations_enabled: true`. With no segment arrays, the summary is
+null and the configuration records false.
 
-Both segment arrays must have exactly the episode frame count. Empty strings in both arrays mean that the frame is not eligible for segment-wise augmentation; partial labels are invalid. Segment metadata is copied to each emitted member by source frame index. If no episode has segment datasets, the builder emits v3 without member labels and records segment_annotations: null. Partial sidecar coverage across episodes is an error.
+### Cross-point group
 
-The conversion input is supplied with --segment-annotations-root. That directory contains episodeN.json for every source episode; each file is either a list or an object with a segments list. Each list entry is null or an object with id and object strings, and the list length must match the converted frame count (RoboTwin's final observation without an action is excluded). The converter writes these labels beside instance masks in the output LeRobot root.
+Each `content.cross_point_groups[]` entry contains:
 
-The sidecar is created by the reviewed annotation conversion path. Human task-specific annotations determine phase boundaries and manipulated objects; generic gripper thresholding does not produce authoritative labels. Instance masks and segment labels undergo the same frame selection and spatial transforms.
+- `group_id`: nonempty stable identifier.
+- `member_count`: positive integer equal to the number of members.
+- `members`: one or more source-frame references.
+- `state`: `state` (`training` or `aborted`), `abort_reasons`, and the
+  serialized derived booleans `training` and `aborted`.
+- `group_metrics` and `build_trace`: objects with build diagnostics.
 
-## Fingerprint and metadata
+Each member requires `source_dataset_repo_id`, nonnegative
+`source_episode_index`, and nonnegative `source_frame_index`. It may include
+an optional `segment` object:
 
-New source fingerprints include annotations/ alongside meta/, data/, and videos/. Index public metadata records segment_annotations with the sidecar storage pattern, dataset names, and unique segment count. It is null when no segment arrays are present. metadata.config.segment_annotations_enabled records whether labels were supplied during build. The fingerprint binds the index to exact annotation contents.
+```json
+{"id": "step_01_pick", "object": "block1"}
+```
 
-## Training behavior
+The segment object contains exactly two nonempty strings:
 
-With segment_wise.enable=true, the loader:
+- `id`: task-specific stable phase identity. Semantically corresponding phases
+  use the same ID across episodes of that task.
+- `object`: canonical manipulated-object name present in that episode's
+  instance-sidecar object table.
 
-1. Requires schema v3 and an instance annotation root.
-2. Keeps a group only when both members have equal segment.id and segment.object.
-3. Uses that canonical object mask for Patch or linear Mix.
-4. Fails if no eligible matching groups remain or the object cannot be resolved.
+`background`, `scene_*`, and the removed historical name `patch_target`
+are invalid segment objects. An unlabeled frame omits `segment` entirely.
 
-Terminal and other intentionally unlabeled frames are omitted from segment-wise training. Rebuild the EmixIndex after changing annotations.
+## Instance and segment sidecars
+
+For source episode N, the builder reads
+`annotations/episode_N.instances.h5`. The sidecar contains a JSON `objects` attribute with unique names and a `labels` mask array. Manipulated task objects use canonical task-role names; background and scene objects may use reserved background/scene names, but the removed patch_target alias is forbidden. Segment-aware
+sidecars additionally contain UTF-8 `segment_id` and `segment_object`
+vectors, each exactly one value per converted LeRobot frame. Empty strings in
+both vectors mean intentionally unlabeled. A partial pair or partially missing
+episode coverage is invalid.
+
+The segment annotation input supplied to conversion is
+`--segment-annotations-root`; it contains `episodeN.json` files with one
+entry per converted source frame. Each entry is null or has `id` and
+`object`. The converter applies the same frame selection and transforms to
+masks and segments. Task-specific phase boundaries and object identities come
+from reviewed task recipes; gripper action endpoints may locate a boundary but
+do not infer the manipulated object.
+
+The formal Patch batch's v3 preparation is kept in a separate dataset root so
+the v2 source and its indexes remain reproducible. Its segment object names
+must resolve in the corresponding instance mask table before indexing.
+
+## Reader behavior
+
+A v3 EmixIndex may omit segment labels when built for non-segment workflows.
+With `segment_wise.enable=true`, training requires v3, instance sidecars, and
+member labels. A group is eligible only when both members have equal
+`segment.id` and `segment.object`; augmentation uses that canonical object's
+mask. Groups with unlabeled members are skipped, and training fails if no
+eligible matching groups remain or the object mask cannot be resolved.
+
+After editing sidecars, rebuild the index: its source fingerprint binds it to
+the exact annotation files.

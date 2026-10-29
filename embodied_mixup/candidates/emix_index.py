@@ -10,10 +10,15 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from .emix_index_spec import (
+    EMIX_DATASET_VERSION,
+    EMIX_INDEX_SCHEMA_VERSION,
+    SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS,
+    validate_emix_index_v3,
+)
 
-EMIX_INDEX_SCHEMA_VERSION = 3
-SUPPORTED_EMIX_INDEX_SCHEMA_VERSIONS = {2, 3}
-EMIX_DATASET_VERSION = "V3.0"
+
+
 
 
 @dataclass
@@ -153,8 +158,9 @@ class EmixGroupMemberRef:
                 raise ValueError("segment metadata must contain exactly id and object")
             if not self.segment["id"] or not self.segment["object"]:
                 raise ValueError("segment metadata requires nonempty id and object")
-            if self.segment["object"] == "patch_target":
-                raise ValueError("legacy object name 'patch_target' is unsupported")
+            object_name = self.segment["object"]
+            if object_name in {"background", "patch_target"} or object_name.startswith("scene_"):
+                raise ValueError("segment object must be a canonical task-object name")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -284,13 +290,19 @@ class EmixIndex:
     content: EmixIndexContent
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "public": self.public.to_dict(),
             "content": self.content.to_dict(),
         }
+        if self.public.schema_version == EMIX_INDEX_SCHEMA_VERSION:
+            validate_emix_index_v3(payload)
+        return payload
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "EmixIndex":
+        public = payload.get("public", {})
+        if public.get("schema_version") == EMIX_INDEX_SCHEMA_VERSION:
+            validate_emix_index_v3(payload)
         return cls(
             public=EmixIndexPublic.from_dict(payload["public"]),
             content=EmixIndexContent.from_dict(payload["content"]),

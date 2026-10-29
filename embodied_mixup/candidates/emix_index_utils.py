@@ -17,6 +17,10 @@ from typing import Any
 
 import numpy as np
 
+from .emix_index_spec import (
+    validate_cross_point_group_v3,
+    validate_emix_index_v3_public,
+)
 from .emix_index import (
     EMIX_DATASET_VERSION,
     EMIX_INDEX_SCHEMA_VERSION,
@@ -330,7 +334,7 @@ def build_emix_index(
     """Build a canonical EmixIndex from source data.
 
     @input: dataset [LeRobotDataset-like], config [EmbodiedMixupConfig].
-    @output: EmixIndex object with schema v2 and strict source fingerprint.
+    @output: EmixIndex v3 object with strict source fingerprint.
     @scenario: Convert pair-based discovery into group-based canonical index records.
     """
     source_dataset, fingerprint = inspect_source_dataset(
@@ -717,6 +721,7 @@ def build_emix_index_streaming(dataset, config: Any, output_path: str | Path) ->
             "config": config_snapshot,
         },
     ).to_dict()
+    validate_emix_index_v3_public(public_payload)
 
     camera_keys = source_dataset.media.camera_keys
     member_frames_ok = _frame_membership_validator(dataset, camera_keys)
@@ -1090,7 +1095,7 @@ def _pair_group_payload(
         abort_reasons.append("frame_alignment_failed")
         state = "aborted"
 
-    return {
+    payload = {
         "group_id": group_id,
         "member_count": 2,
         "members": members,
@@ -1112,6 +1117,8 @@ def _pair_group_payload(
             "candidate_id": f"neighbor_{anchor_idx}_{neighbor_idx}",
         },
     }
+    validate_cross_point_group_v3(payload)
+    return payload
 
 
 def _compute_progress_interval(total_items: int) -> int:
@@ -1159,8 +1166,10 @@ def _build_cluster_info(labels: np.ndarray, pairs) -> list[dict]:
 
 
 def save_emix_index(index: EmixIndex, path: str | Path) -> Path:
-    """Save one EmixIndex to JSON."""
+    """Save one current-schema EmixIndex to JSON."""
 
+    if index.public.schema_version != EMIX_INDEX_SCHEMA_VERSION:
+        raise ValueError("Only EmixIndex schema v3 can be written; v2 is legacy read-only.")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as handle:

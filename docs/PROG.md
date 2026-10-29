@@ -1,4 +1,17 @@
-最后修改：2026-10-22
+最后修改：2026-10-30
+
+## 2026-10-30：阶段标签端点修正、EmixIndex v3 规范化与十任务索引重建
+
+阶段边界按用户修正为夹爪命令结束点：PICK 的闭合信号首次到达 0 且下一帧完全不变；PLACE 的放松信号首次到达 1 且下一帧不变。端点帧归入该 PICK/PLACE 阶段，下一阶段从下一帧开始。每个任务按 task code 的固定操作顺序，为每个对象生成 PICK 与 PLACE 两段；最终 PLACE 后回程留空。
+
+commit f5929d1 已提交阶段标签生成器、十任务对象顺序配方与标注说明。全部 3000 个 episode 的动作序列均与对应任务代码预期 PICK/PLACE 次数和顺序一致；每个端点信号均有稳定平台，自动阶段边界可由动作数据确定。新标签写入独立目录 formal/segment_annotations/<task>/；先前使用中点边界的草稿保留在 formal/segment_annotations_midpoint_20261030/，不可用于后续构建。
+
+为避免改写 Patch 批次原件，以硬链接复制十个 LeRobot 数据集到 formal/lerobot_v3/<task>/，并在副本中将历史渲染 actor 名称映射到任务的规范对象角色、加入 segment_id 与 segment_object。映射依据任务代码 actor 顺序及原始 instance_objects 表；10 个任务每个 300 集的渲染 actor 映射一致。原始数据和已有 v2 索引保持不变。
+
+新增规范模块 embodied_mixup/candidates/emix_index_spec.py，以 TypedDict、JSON Schema 与增量 validator 定义 v3；emix_index.py、streaming builder 与保存/加载路径接入校验。当前构建器只写 v3、v2 保留为历史只读格式；说明见 docs/dev/EMIX_INDEX_SPEC.md。docs/EXP.md 新增实验代号 sin-v0-seg 的对照计划和开训门槛。
+
+十任务索引正在用原有索引参数重建到 formal/emix_index_v3/<task>/emix_index.json。重建后还需核验每个索引的 schema_version、segment_annotations 元数据、segment 覆盖、源指纹与候选配对；训练尚未启动。阶段标签实现与之前工作提交为 f5929d1；本次 v3 规范、转换器与实验记录将在索引核验后提交。
+
 
 ## 2026-10-22 12:34 CST：Patch 第二次 BUG 批次作废并重启
 
