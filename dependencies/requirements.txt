@@ -175,6 +175,7 @@ toml==0.10.2
 toppra==0.6.7
 torch==2.10.0+cu128
 torchaudio==2.10.0+cu128
+# TorchCodec is the preferred training decoder; _install.sh provisions its FFmpeg shared runtime.
 torchcodec==0.10.0
 torchvision==0.25.0+cu128
 tqdm==4.67.3

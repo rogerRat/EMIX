@@ -1,5 +1,7 @@
 # SOP-00：Linux 无头服务器环境安装与 SAPIEN 验收
 
+Last modified: 2026-10-29 CST.
+
 本文适用于 Ubuntu 22.04、已由宿主机提供 NVIDIA 驱动、容器具有
 `compute,utility,graphics` 能力的无头服务器。已在 RTX 5090 / 驱动
 580.105.08 上验证 SAPIEN 3.0.0b1 的物理步进与光线追踪相机渲染。
@@ -21,6 +23,10 @@ ICD 能枚举 GPU，且 SAPIEN 能返回相机帧。
 `_install.sh` 不改动 `emix-twin`。`_install_twin.sh` 不改动 `emix`。
 三个入口均复用已存在的环境，不删除环境或数据。
 RoboTwin 的第三方资产和策略检查点需另行准备；安装脚本不下载数据集。
+
+主环境安装入口 _install.sh 会在 Debian/Ubuntu 上检查并补齐 FFmpeg 共享运行库。
+该系统包用于 TorchCodec 视频解码；它与 Conda 中的 Python 包是不同层级的依赖。
+emix 环境安装完成后，安装器会生成短视频并用 TorchCodec 实际解码作为验收。
 
 本次容器的系统盘为 30 GB，`/root/autodl-tmp` 数据盘实际显示 100 GB
 （不是预期的 50 GB）。为保留系统盘空间，已将
@@ -107,6 +113,12 @@ python dependencies/if_visual.py --denoiser oidn
   OpenCV 4.12.0.88 和 `packaging==25.0`；仿真环境仍独立固定 NumPy 1.26.4，
   供 TOPPRA 扩展使用。不要直接安装整份历史快照。
 
+主环境默认保留 LeRobot 的视频后端自动选择。未在实验配置中明确设置
+dataset.video_backend 时，不要由批次生成脚本强制选择 PyAV。2026-10-29 对
+EMIX 逐帧索引读取进行同样本对比：TorchCodec 平均 0.076 秒/样本，PyAV
+平均 2.512 秒/样本；TorchCodec 运行库缺失会同时导致视频读取失败或训练数据
+加载明显变慢。
+
 ## 5. 故障定位
 
 | 现象 | 检查与处理 |
@@ -116,6 +128,8 @@ python dependencies/if_visual.py --denoiser oidn
 | `failed to find a rendering device` / `vkCreateInstance` 失败 | 检查 `libEGL.so.1`、`libvulkan.so.1` 和 NVIDIA ICD；运行 `_instal_sapien.sh` 补齐系统包，再用 `vulkaninfo --summary` 验证。 |
 | `nvidia-smi` 成功但 Vulkan 失败 | CUDA 可用不等于 graphics 可用；检查容器 graphics 能力和 EGL/GLVND。 |
 | `OIDN Error: unsupported device type: CUDA` | 在 Blackwell GPU 上完整运行 `_install_twin.sh`，使 CUDA OIDN 构建完成，并确认 SAPIEN 私有目录的 2.0.1 入口已链接到 2.4.1；用 `if_visual.py --denoiser oidn` 复核。 |
+| TorchCodec 报 Could not load libtorchcodec，或提示 libavdevice/libavfilter 缺失 | 运行 bash dependencies/_install.sh 安装 FFmpeg 共享运行库，并确认安装末尾的 TorchCodec 视频解码 smoke 通过。不要用不同 ABI 的软链接伪造 FFmpeg 版本。 |
+| EMIX 训练 GPU 利用率低且数据读取慢 | 检查生成训练配置中的 dataset.video_backend。默认应由 LeRobot 自动选择 TorchCodec；确认 TorchCodec 加载了受支持的 FFmpeg 共享库。PyAV 在本项目逐帧读取对比中约慢 33 倍。 |
 
 本次排查曾发现 `/dev/nvidia-modeset` 不可访问，但补齐 EGL/GLVND 后，
 Vulkan 与 SAPIEN 仍正常工作。不要把该节点的缺失直接判为此类错误的根因。

@@ -42,6 +42,30 @@ fi
 
 conda activate "${ENV_NAME}"
 
+# LeRobot 0.4.4 selects TorchCodec when installed. Keep compatible FFmpeg
+# shared libraries available; PyAV is much slower for EMIX frame-at-a-time reads.
+if command -v apt-get >/dev/null 2>&1 && command -v ldconfig >/dev/null 2>&1; then
+    if ! command -v ffmpeg >/dev/null 2>&1 || \
+       ! ldconfig -p | grep -qE "libavdevice\.so\.[0-9]+" || \
+       ! ldconfig -p | grep -qE "libavfilter\.so\.[0-9]+"; then
+        run_privileged() {
+            if [[ "$EUID" -eq 0 ]]; then
+                "$@"
+            elif command -v sudo >/dev/null 2>&1; then
+                sudo "$@"
+            else
+                echo "[emix] FFmpeg shared libraries are missing; rerun as root or install ffmpeg with sudo." >&2
+                exit 1
+            fi
+        }
+        run_privileged apt-get update
+        run_privileged env DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg
+        run_privileged ldconfig
+    fi
+else
+    echo "[emix] apt-get/ldconfig unavailable; provide ffmpeg and compatible FFmpeg shared libraries for TorchCodec."
+fi
+
 echo "Active Python: $(which python)"
 echo "Python version: $(python --version)"
 
@@ -122,6 +146,7 @@ echo "============================================================"
 python -c "
 import lerobot;        print(f'lerobot:       {lerobot.__version__}')
 import torch;          print(f'torch:         {torch.__version__}')
+import torchcodec;     print(f'torchcodec:    {torchcodec.__version__}')
 import torchvision;    print(f'torchvision:   {torchvision.__version__}')
 import sapien;         print(f'sapien:        {sapien.__version__}')
 import gymnasium;      print(f'gymnasium:     {gymnasium.__version__}')
@@ -140,6 +165,29 @@ print(f'transformers:  {metadata.version(\"transformers\")}')
 print(f'num2words:     {metadata.version(\"num2words\")}')
 "
 python -m pip check
+
+python - <<'PY_TORCHCODEC_SMOKE'
+import subprocess
+import tempfile
+from pathlib import Path
+
+from lerobot.datasets.video_utils import decode_video_frames
+import torchcodec
+
+with tempfile.TemporaryDirectory(prefix="emix-ffmpeg-smoke-") as temp_dir:
+    video_path = Path(temp_dir) / "torchcodec-smoke.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-f", "lavfi", "-i", "color=c=black:s=64x64:r=2:d=1",
+            "-an", "-c:v", "mpeg4", str(video_path),
+        ],
+        check=True,
+    )
+    frames = decode_video_frames(video_path, [0.0], 0.1, "torchcodec")
+    assert tuple(frames.shape) == (1, 3, 64, 64), tuple(frames.shape)
+print(f"TorchCodec {torchcodec.__version__}: FFmpeg decode smoke passed")
+PY_TORCHCODEC_SMOKE
 
 # Install the browser binary required by scripts/render_vis_png.py.
 python -m playwright install --with-deps chromium

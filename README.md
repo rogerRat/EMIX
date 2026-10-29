@@ -1,5 +1,7 @@
 # Embodied Mixup (开发中)
 
+Last modified: 2026-10-29 CST.
+
 ## 简介
 
 本项目是一个基于 RoboTwin 和 LeRobot 的 Embodied Mixup 框架。当前活动基准与首轮实验流程见 [docs/sop/01-data-generation/SOP-01-data-generation-pipeline.md](docs/sop/01-data-generation/SOP-01-data-generation-pipeline.md)。ManiSkill 历史实现已归档到 `legacy/maniskill/`，不再是运行入口。
@@ -54,6 +56,8 @@
 ## 使用说明
 
 ### 安装与环境配置
+
+主环境安装会确保 TorchCodec 所需的 FFmpeg 共享运行库。训练配置未指定解码后端时，保留 LeRobot 的自动选择；EMIX 的逐帧索引读取优先使用 TorchCodec，避免将 PyAV 作为通用默认值。修复背景和实测对比见 [TorchCodec 与 FFmpeg 运行库记录](docs/results/20261029-torchcodec-ffmpeg-runtime.md)。
 
 项目使用两个独立的 Conda 环境。`emix` 用于数据转换、索引与训练；
 `emix-twin` 用于 RoboTwin 仿真。Linux 无头服务器只要容器暴露 NVIDIA
