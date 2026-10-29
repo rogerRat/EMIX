@@ -62,12 +62,12 @@ pipeline:
 project:
   collection_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/robotwin/{task}
   dataset_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/lerobot_v3/{task}
-  eval_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs/eval/{task}
+  eval_root: /root/EMIX/outputs/sin-v0-seg/formal/seg_mix/eval/{task}
   index_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/emix_index_v3/{task}
   log_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/logs
   robotwin_root: third_party/RoboTwin
   runtime_config_root: configs/scripts/run_sin_v0_seg_formal_seg_mix/{task}
-  train_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs/train/{task}
+  train_root: /root/EMIX/outputs/sin-v0-seg/formal/seg_mix/train/{task}
   run_label: sin-v0-seg-seg_mix
 training:
   batch_size: 64
@@ -116,7 +116,7 @@ visualization:
   chrome_timeout_s: 600
   device_scale_factor: 2
   max_points: 10000
-  output_root: /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs/intersections
+  output_root: /root/EMIX/outputs/sin-v0-seg/formal/seg_mix/intersections
   png_margin: 24
   skip_click_images: true
   virtual_time_budget_ms: 120000
