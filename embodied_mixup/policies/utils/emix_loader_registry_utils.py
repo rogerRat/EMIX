@@ -46,6 +46,7 @@ class EmixLoaderSettings:
     segment_wise_enable: bool = False
     seed: int = 0
     include_task: bool = False
+    video_backend: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ class EmixIndexReader:
         source_repo_id: str,
         emix_index_path: str | Path,
         policy_temporal_spec: PolicyTemporalSpec,
+        video_backend: str | None = None,
     ) -> None:
         logger.info("[emix.loader] Loading EmixIndex: %s", emix_index_path)
 
@@ -131,7 +133,11 @@ class EmixIndexReader:
             source_repo_id,
             source_root_str,
         )
-        self.dataset = dataset_cls(repo_id=source_repo_id, root=source_root_str)
+        self.dataset = dataset_cls(
+            repo_id=source_repo_id,
+            root=source_root_str,
+            video_backend=video_backend,
+        )
 
         # Build group map
         all_groups = self.index.content.cross_point_groups
@@ -390,6 +396,7 @@ class EmixPolicyDataset(torch.utils.data.Dataset):
             source_repo_id=source_repo_id,
             emix_index_path=emix_index_path,
             policy_temporal_spec=policy_temporal_spec,
+            video_backend=loader_cfg.video_backend,
         )
         if loader_cfg.segment_wise_enable and self.reader.index.public.schema_version < 3:
             raise ValueError(

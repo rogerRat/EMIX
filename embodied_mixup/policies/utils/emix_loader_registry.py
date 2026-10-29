@@ -63,6 +63,7 @@ def make_emix_loader(
         segment_wise_enable=bool(getattr(loader_cfg, "segment_wise_enable", False)),
         seed=int(getattr(loader_cfg, "seed", 0)),
         include_task=registration.include_task,
+        video_backend=getattr(loader_cfg, "video_backend", None),
     )
     return EmixPolicyDataset(
         source_root=source_root,

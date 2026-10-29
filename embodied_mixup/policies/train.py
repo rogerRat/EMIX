@@ -523,6 +523,7 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
             detect_overlap_enable=bool(getattr(cfg.policy_cfg, "detect_overlap_enable", False)),
             detect_overlap_refuse_ratio=float(getattr(cfg.policy_cfg, "detect_overlap_refuse_ratio", 0.5)),
             seed=0,
+            video_backend=cfg.video_backend,
         )
         dataset = make_emix_loader(
             policy_type=cfg.policy_cfg.type,
