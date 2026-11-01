@@ -1,5 +1,33 @@
 最后修改：2026-10-30
 
+## 2026-11-01 11:20 CST — 当前五任务四臂正式队列
+
+用户已将范围改为现有配置的前五个任务，并要求一个任务的四臂依次完成。
+远端 tmux `sin-v0-seg-task-first` 运行
+`scripts/run_seg_task_first.py`，使用隔离的 `emix-reinstall` 策略环境与
+`emix-twin-reinstall` 仿真环境。旧十任务、按臂推进的巡检记录仅是历史状态；
+本机旧小时巡检和 handoff 已关闭。
+
+首任务 `blocks_ranking_rgb_left_oppo_cam` 的 `seg_mix` 训练已完成。
+评估在 43/100 回合、种子 100125 处因空抓取目标断言退出。核对显示
+RoboTwin 10 月 28 日的变更只涉及分割对象命名；近期收紧的 EMIX 评估异常
+处理误将预期的空移动目标视作致命异常。已恢复该类无效专家种子的跳过逻辑，
+GIL 和其他未知异常继续上报。11:20 重启正式队列，复用训练检查点和评估
+进度；当前完整指标尚未产生。以远端日志和 metrics 为准。
+
+## 当前实验交接：sin-v0-seg（核验于 2026-10-30 13:32 CST）
+
+**目标与背景。** 本批评估阶段与操作对象约束是否改善 EMIX 增强。阶段边界按夹爪动作结束点标注：闭合稳定点结束 PICK，放松稳定点结束 PLACE；阶段包含动作过程及相应搬运过程，Segment 对应的 object 是该阶段实际操作物体。阶段定义根据十个任务程序审阅并标注，不由夹爪信号单独猜对象。EmixIndex 使用规范化 v3，增强只从同 `segment.id`、同 `segment.object` 的候选中选取。
+
+**实验臂与参照。** 四个新处理臂按单 GPU 串行运行：`seg_mix`、`seg_patch`、`seg_mix_overlap033`、`seg_patch_overlap033`，每臂十任务。segment-wise Mix 只对阶段目标对象区域做线性混合；Patch 对该对象区域硬拼贴。overlap033 臂在候选对象掩码 IoU > 0.33 时拒绝并顺延候选；候选均超限时选最低 IoU 并记录 fallback。BaselineDP 不重训，复用 sin-v0-patch 十任务的 100 集结果（387/1000，38.7%）。因此结果比较应同时列各臂原始成功数/评估数、成功率，以及该臂减 Baseline 的百分点差值。
+
+**固定条件与运行顺序。** 每个训练任务 seed 0、30,000 steps；评估 100 episodes、seed 0。四臂顺序为 `seg_mix → seg_patch → seg_mix_overlap033 → seg_patch_overlap033`，每臂内按任务配置顺序串行。正式配置和 runbook 位于 `configs/scripts/run_sin_v0_seg_formal*.yaml` 及对应任务子目录；输出在 `outputs/sin-v0-seg/formal/`。数据副本与 v3 索引在 `/root/autodl-tmp/sin-v0-seg/formal/`，不修改 Patch 基线归档或原始数据。
+
+**当前进度。** 启动器 PID 147276，主日志 `/root/autodl-tmp/sin-v0-seg/formal/logs/run_all_arms.log`。截至 13:32，只有 `seg_mix` 在运行，完成 2/10 个任务（2/40 份新臂指标）：`place_bread_skillet` 为 84/100 (84%)，对应复用 Baseline 87/100 (87%)，差值 −3 pp；`place_can_basket` 为 45/100 (45%)，Baseline 56/100 (56%)，差值 −11 pp。`stack_blocks_two` 已训练完成，正在评估，flow 日志到 episode 22/100；`seg_patch` 及两个 overlap 臂尚未开始。该进度是部分结果，不能代表整批结论。核验时评估进程活跃、日志更新，GPU 0 利用率 13%、显存约 2.0 GiB；评估仿真有 CPU 开销，低 GPU 利用率本身不等于训练故障。
+
+**接手检查入口。** 先检查上述启动器、主日志、对应 `outputs/.../metrics.json` 和当前进程，再确认运行臂/任务是否按串行顺序推进。最新状态以远端进程、flow 日志和完整 metrics 为准；`docs/PROG.md` 下方按时间追加巡检记录。不得重复启动实验或并行占用 GPU；若修复影响四臂协议一致性，先记录并比较四份配置与快照。实验巡检器每小时在本机触发 Codex，通过 `ssh emix` 检查远端；WSL Codex 因服务端 403 未承担该任务。
+
+
 ## 2026-10-30：Patch 批次结果归档；sin-v0-seg 小时巡检已挂载
 
 sin-v0-patch 有效正式批次的 BaselineDP / EMIX Mix DP / Patch DP 十任务指标已统一核对，每臂均为 1,000 次评估。总体成功数为 387/1000、383/1000、383/1000（38.7%、38.3%、38.3%）；Patch 相对 baseline 3 胜、2 平、5 负，单 seed 结果只作描述性报告。详情与结论边界见 docs/RESULTS.md 和 docs/results/20261030-sin-v0-patch-results.md。30 份 metrics、当时留存的训练/评估产物、日志和配置已独立复制到 /root/autodl-tmp/archive/sin-v0-patch-oppo-20261030/；源输出、数据与索引未移动。
@@ -244,3 +272,99 @@ RoboTwin 默认有 click bell 单臂任务，但 baseline 和 EMIX 都很容易�
 - seg_mix task place_bread_skillet_left_oppo_cam: flow attempt 1 failed at 03:56:14 during train config validation because its output directory was under /root/autodl-tmp/sin-v0-seg/formal/seg_mix/outputs, outside the required /root/autodl-tmp/outputs root. Flow attempt 2 started at 03:56:42 and recovered without monitor intervention; its 30,000-step checkpoint completed at 04:36:38.
 - Evaluation is active for the same task (100 episodes, seed 0); flow log reports episode 24/100 at 05:12. Episode videos 0000–0023 are present, with episode 0023 still being written. seg_patch, seg_mix_overlap033, and seg_patch_overlap033 have not started.
 - No completed metrics files are present for the four arms yet (0/40); this is in-progress status, not an experiment result. GPU 0 at 05:11:34: 17% utilization, 5,770 MiB / 32,607 MiB. No settings or processes changed.
+
+## 2026-10-30 07:12 +0800 — sin-v0-seg monitor
+
+- `seg_mix` task 1 (`place_bread_skillet_left_oppo_cam`) completed training and 100-episode evaluation; its metrics file has 100 records. The earlier 03:56:14 launch failed the output-root guard, and the 03:56:42 attempt recovered and completed this task without a monitor-side change.
+- The chain advanced to task 2 (`place_can_basket_left_oppo_cam`), training at 5,817/30,000 steps, about 11.4 steps/s in the latest log. One of 40 expected arm/task metrics files is complete; all other arms remain queued.
+- GPU 0: 60% utilization, 5,875/32,607 MiB. The 16 dataloader workers are active; no training settings, processes, or outputs were changed.
+
+## 2026-10-30 08:12 +0800 — sin-v0-seg monitor
+
+- `seg_mix` task 2 (`place_can_basket_left_oppo_cam`) training has completed and its 100-episode evaluation is active. The flow log records episode 10/100, at 495/700 environment steps in the latest sample; video `episode_0010.mp4` is being written. Task 1 has one complete 100-record metrics file; batch total is 1/40 metrics files. Other arms have not started.
+- GPU 0 sampled at 31% utilization, 5,770 MiB / 32,607 MiB; evaluator CPU use was about 211%, with ffmpeg writing the current video. The log continues advancing; no settings or processes changed.
+
+## 2026-10-30 13:12 +0800 — sin-v0-seg monitor
+
+- `seg_mix` advanced to task 3 (`stack_blocks_two_left_oppo_cam`); training is complete and its 100-episode evaluation is active at episode 9/100, environment step 622/800. Current evaluation process is a child of the live flow; no competing experiment task was found.
+- Two of 40 expected arm/task metrics files are complete and each contains 100 episode records (`seg_mix` tasks 1–2). The three later arms have not started. GPU 0 sampled at 61% utilization, 3,276 MiB / 32,607 MiB; evaluator CPU use was about 180%.
+- No failures or protocol changes observed; processes and settings left untouched.
+
+## 2026-10-30 - seg performance inspection
+
+- Inspected the active seg_mix evaluator (PID 45878), third task stack_blocks_two; log reached episode 50/100. No experiment restart or installation interruption.
+- RTX 5090 has 32 GiB VRAM; observed evaluator use about 2 GiB. GPU is NUMA node 0; CPU quota is 25 cores although 208 logical CPUs are visible. Evaluation performs expert seed validation and serial simulation before/between policy calls.
+- Training already uses cuDNN benchmark and CUDA pinned-memory loading; evaluation already uses torch.inference_mode. No batch, seed, diffusion-step, precision, worker-count, data, or policy changes made.
+- Tried reversible evaluator thread affinity to GPU-local CPUs 0-51,104-155. Initial 20-second windows had 219 steps (default) versus 65 steps plus an episode boundary (local); subsequent 12-second alternating windows were within initialization with no rollout steps. These samples do not establish a speedup. All original thread affinity masks restored; no tuning retained.
+- Low utilization alone is not evidence that a numerical optimization is equivalent. No measured acceleration claimed.
+
+
+## 2026-10-30 17:12 +0800 — sin-v0-seg monitor
+
+- seg_mix advanced to task 4, stack_bowls_two_left_oppo_cam: 30,000-step training finished; evaluation has completed 16/100 episodes and is continuing. The wrapper and flow remain active with a single evaluator.
+- Verified 3/40 complete metrics files: seg_mix place_bread_skillet, place_can_basket, and stack_blocks_two, each with episodes=100, 100 unique episode records, and consistent success counts/rates. All ten task slots checked for each of the four arms; later arms have no completed metrics yet.
+- GPU 0 sampled at 25% utilization, 5,642/32,607 MiB; evaluator CPU about 225%, with ffmpeg writing episode video. Rollout log advanced from step 149 to 294/900 and then episode 16 completion during inspection. No recovery or protocol changes needed; processes left untouched.
+
+
+## 2026-10-31 00:26 +0800 — sin-v0-seg monitor
+
+- Batch stopped on seg_mix task 4, stack_bowls_two_left_oppo_cam. Wrapper log last modified 2026-10-30 21:19:23 +0800: episode 96/100 completed, then pybind11 inc_ref / PyGILState_Check failures for seeds 100648–100665, evaluator segmentation fault (exit 139), and flow-train-eval-gpu-0 failure. No active wrapper, flow, train, eval, or installation process found; no default tmux server found. GPU 0: 0% utilization, 0/32607 MiB. Data disk has 131 GiB available.
+- Checked all ten configured tasks in each of four arms: three complete metrics files in seg_mix (place_bread_skillet, place_can_basket, stack_blocks_two), each with episodes=100, 100 unique episode IDs and seeds, and consistent success counts/rates. Other arms have zero metrics. Completed-task model weights were pruned by the existing flow cleanup; its completion guard accepts retained checkpoint metadata plus matching metrics. Batch is not complete.
+- Failed task retains its 30,000-step model (1043982652 bytes) and 96 episode videos, but no metrics.json. evaluation/evaluate.py writes records only after all episodes; scripts/run.py deletes an incomplete evaluation directory before retrying. Native crash recovery is ambiguous; no code/config repair or restart applied, and all processes, settings, logs, and outputs left untouched. Recommend diagnosing native simulator/GIL lifecycle handling and preserving the partial evaluation before a protocol-preserving retry through the existing wrapper. No seed skipping, dependency changes, retraining, or altered evaluation settings applied.
+
+## 2026-10-31 02:03 +0800 — sin-v0-seg monitor
+
+- The existing wrapper resumed after the earlier `seg_mix` task 4 evaluator crash. Flow `20261031-005234-558930-cuda-0` reused the completed training and evaluations for tasks 1–3 and reused task 4 training; it removed the incomplete evaluation and launched a fresh evaluation for `stack_bowls_two_left_oppo_cam`.
+- Current task 4 evaluation is active at episode 23/100 and environment step 376/900. The evaluator logged infeasible-layout seed skips (100159, 100162); it remains CPU-active. All three complete `seg_mix` metrics files contain 100 records each; total batch completion is 3/40. No other arm has started, and no result is claimed for task 4.
+- GPU 0 sampled at 0% utilization, 2,094/32,607 MiB; evaluator CPU was 238%. This is the CPU-heavy evaluation phase, with no training dataloader active. No process, code, configuration, protocol setting, or output was changed during this inspection; logs and tmux session were left intact.
+
+## 2026-10-31 19:59 +0800 — sin-v0-seg monitor
+
+- `seg_mix` task 4 (`stack_bowls_two_left_oppo_cam`) remains in evaluation after training completed at 900/900 steps. Current evaluator PID 550366 is alive, but its log has not advanced past episode 86/100 (last log write 15:15) and no episode video newer than episode 85 (15:11); the episode-86 ffmpeg child has been blocked reading its pipe for over five hours. This is a stalled evaluation, not a completed result.
+- Earlier retries of this same task logged repeated pybind11 `PyGILState_Check()` failures and ended with evaluator segmentation faults (exit 139). Current retry has not exited; it logged infeasible layout skips through seed 100650. GPU 0 sampled at 0% utilization with 5,492/32,607 MiB allocated; evaluator cumulative CPU time is 10:53:21, but its current wait channel is `futex_wait_queue_me`. No training dataloader is active during this eval.
+- Only three valid 100-episode metric files exist, all in `seg_mix` (tasks 1–3); the other three arms have none. No complete result is claimed. Left all processes, outputs, logs, and experiment settings untouched because the evaluator is still active and safe recovery from the repeated native crash/stall is ambiguous. Resume review after the active evaluator exits; do not change evaluation seeds or skip episodes.
+
+## 2026-10-31 23:11 CST — GIL/hang recovery and result validity
+
+- Evaluator 550366 had made no log progress since 15:15 at 86/100, last rejection seed 100650. Native stack attachment via isolated py-spy was denied by the container; exact C++ cause remains unconfirmed. CPU percentages previously reported were lifetime averages, not interval measurements.
+- Source inspection: Base_Task.close_env delegates to inherited gym.Env.close without explicit resource teardown. Repeated scene construction and native lifecycle issues are suspected; this is not proof of the particular GIL fault.
+- Preserved failed output in /root/autodl-tmp/sin-v0-seg/formal/diagnostics/hung-eval-550366, terminated only the hung evaluator, and allowed the existing supervisor to restart the queue.
+- Added evaluation seed/episode progress state with configuration identity, atomic saves and reuse; ten seed attempts per process followed by exec to discard native resources. Each expert validation and rollout has a 1200-second faulthandler timeout that dumps Python stacks and exits. Runtime failures now abort for retry of the same seed; only SceneInitRejectError is classified as a skippable exception. Existing false expert-success checks remain unchanged.
+- No old partial records were fabricated: legacy run did not persist episode seed records before completion. New recovery begins a fresh evaluation using the retained final checkpoint. Lifecycle changes may alter nondeterministic planner behavior; do not claim bitwise equivalence.
+- Audit of original completed seg_mix task logs: no GIL exception in the first three completed tasks. place_can_basket skipped ten unstable-object errors and one target_pose=None error; stack_blocks_two skipped one target_pose=None error. These results are provisional for comparisons until actual accepted seed sets and selection semantics are audited against baseline. Do not reinterpret runtime errors as policy failures or silently skip them.
+- Validation so far: Python compilation passed for evaluate.py and run.py; new evaluator PID 275520 started. End-to-end completion and recycling validation pending.
+
+## 2026-10-31 — non-attach GIL diagnostics
+
+Current evaluation remains active (8/100 at inspection). No experiment process was interrupted for this diagnosis.
+
+- kernel.core_pattern pipes to /usr/share/apport/apport, which is absent inside this container. No accessible core artifacts found at standard apport locations; a shell "core dumped" message is not evidence of a retained dump. Host-side capture cannot be assessed from this container.
+- py-spy attachment was denied. ptrace_scope=1, seccomp filtering active, effective capabilities lack SYS_PTRACE. These observations do not independently identify which mechanism denied attachment.
+- Scanned all loaded shared objects for the exact PyGILState_Check failure text. Matches: mplib/pymp, manifold3d, scipy spatial distance and pocketfft, triton/libtriton. SAPIEN does not contain this exact text. This narrows potential emitters, not necessarily the underlying cause.
+- Robot.set_planner constructs MplibPlanner/SapienPlanningWorld for both arms when need_topp is true, even with planner=curobo. MPLib is therefore on the active initialization path.
+- Versions: sapien 3.0.0b1, mplib 0.2.1, torch 2.7.1+cu128, gymnasium 0.29.1; installed pybind11 package 3.1.0 does not establish which pybind11 headers each binary was compiled against.
+- Built diagnostics/gil_capture.so: LD_PRELOAD interposer on __cxa_throw logs native library paths, symbol names and module-relative offsets only for std::runtime_error mentioning pybind11 or PyGILState. It forwards the original exception. Tested with a clearly labelled synthetic exception and native imports; no genuine GIL reproduction yet.
+- evaluate.py opt-in startup hook is limited to seg config names and diagnostics/gil_capture.enabled sentinel. The next natural interpreter recycle loads it. Output goes to existing evaluator/flow logs as [GIL-NATIVE]. No pointer attachment or system core configuration change required.
+- Source retrieval from GitHub timed out; no upstream defect claim made.
+
+## 2026-10-31 23:59 CST — sin-v0-seg monitor
+
+- `seg_mix` task 4 (`stack_bowls_two_left_oppo_cam`) remains in evaluation, recovery attempt 4, after training reached 900/900. The active log records episode 11/100; the evaluator is alive and CPU-active (236% over the sampled interval), with no newer episode record during this check. GPU 0 sampled at 1% utilization and 2,848/32,607 MiB.
+- The current retry follows the prior task-4 assertion failure (`target_pose=None`) and earlier native evaluator failures. Evaluation is making CPU-side progress, so processes, code, configuration, outputs, protocol settings, and tmux/log state were left untouched. Three valid 100-record metrics files exist for `seg_mix`; no other arm has started and no overall result is claimed.
+
+## 2026-11-01 00:54 CST — sin-v0-seg monitor
+
+- Current task: `seg_mix` / `stack_bowls_two_left_oppo_cam`, evaluation retry 6, progressing through 26/100 episodes. Previous attempt failed at seed 100156 (`target_pose=None`); supervisor relaunched through its existing recovery path. Retry output includes videos through episode 25. GPU 0: 1%, 2,596/32,607 MiB; evaluator process alive and CPU-active.
+- No code/config/protocol change, restart, or termination by monitor. Three earlier `seg_mix` metrics complete; task 4 and remaining arms are incomplete. No result claimed.
+
+## 2026-11-01 01:55 CST — sin-v0-seg monitor
+
+- The prior `seg_mix` / `stack_bowls_two_left_oppo_cam` evaluation failed during expert validation at seed 100288 after 35 completed episodes, with `target_pose cannot be None for move action`; the flow exited with status 1. The existing supervisor launched recovery attempt 7 at 01:24 through the wrapper. The resumed evaluator has advanced to seed 100348 with 46 completed episodes; no final metrics exist for this task.
+- GPU 0 sampled at 0% and 2,546/32,607 MiB while the evaluator was CPU-active (222% lifetime average); this is evaluation, with no training dataloader active. Three metrics files exist in `seg_mix` and none in the other arms. No monitor restart, repair, termination, or protocol change was made; the active chain was left running.
+
+
+## 2026-11-01 02:55 +0800 — sin-v0-seg monitor
+
+- The chain is stopped at `seg_mix` / `stack_bowls_two_left_oppo_cam`: the evaluator failed at seed 100357 during expert validation with `target_pose cannot be None for move action`, after episode 48/100. Its atomic resume file retains 48 records and seed 100357; no final task metrics exist. No live wrapper, flow, train, evaluator, or installer process was found. GPU 0 sampled at 0% and 0/32607 MiB.
+- Checked all ten configured tasks in all four arms: three valid 100-record metrics files in `seg_mix`; the remaining 37 are incomplete. Earlier completed metrics remain provisional for comparisons because of the documented seed-selection audit.
+- Restart is unsafe without resolving the changed wrapper: it invokes a task-first script limited to the first five tasks and rebuilt environments, rather than the requested four-arm, ten-task order. The training environment and validation marker are absent; the rebuild log reports `file:///root` is not a Python project, and validation says installation did not complete. No restart, repair, protocol change, or process termination was performed. Preserve the 48-record resume state; diagnose the environment and restore the requested full arm order before a validated, protocol-preserving restart through the wrapper.
