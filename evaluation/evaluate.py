@@ -1,6 +1,8 @@
 """Evaluate a LeRobot Diffusion Policy in the RoboTwin benchmark."""
 
 import argparse
+import faulthandler
+import hashlib
 import importlib
 import json
 import logging
@@ -10,6 +12,16 @@ import subprocess
 import sys
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+# Optional external native-exception recorder, enabled only for the seg batch.
+# Loaded at interpreter startup so it can interpose C++ throws without ptrace.
+_capture = Path("/root/autodl-tmp/sin-v0-seg/formal/diagnostics/gil_capture.so")
+if (any("run_sin_v0_seg_formal_" in arg for arg in sys.argv)
+        and _capture.with_suffix(".enabled").exists()
+        and str(_capture) not in os.environ.get("LD_PRELOAD", "").split(":")):
+    _env = os.environ.copy()
+    _env["LD_PRELOAD"] = str(_capture) + (":" + _env["LD_PRELOAD"] if _env.get("LD_PRELOAD") else "")
+    os.execve(sys.executable, [sys.executable, "-u", str(Path(__file__).resolve()), *sys.argv[1:]], _env)
 
 import cv2
 import numpy as np
@@ -23,6 +35,20 @@ from embodied_mixup.policies.utils.batch import assert_single_observation_config
 from embodied_mixup.policies.utils.image_noise import ImageNoiseConfig, add_image_noise
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _is_missing_move_target(error: Exception) -> bool:
+    """Treat RoboTwin's null expert move target as an infeasible seed."""
+    if type(error) is not AssertionError or str(error) != "target_pose cannot be None for move action.":
+        return False
+    tb = error.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        filename = code.co_filename.replace("\\", "/")
+        if code.co_name == "__init__" and filename.endswith("/envs/utils/action.py"):
+            return True
+        tb = tb.tb_next
+    return False
 
 
 def freeze_right_action(
@@ -68,6 +94,13 @@ def _load_policy(checkpoint, dataset_root, repo_id, device):
     @output: tuple of policy, preprocessor, postprocessor, dataset metadata.
     @scenario: Reuse an EMIX-trained or baseline Diffusion Policy for RoboTwin rollout.
     """
+    worker_env = os.environ.get("EMIX_POLICY_WORKER_ENV")
+    if worker_env:
+        project_root = str(Path(__file__).resolve().parents[1])
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        from evaluation.isolated_policy import load_isolated
+        return load_isolated(checkpoint, dataset_root, repo_id, device, worker_env)
     bootstrap_lerobot_runtime()
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     from lerobot.policies.factory import make_policy, make_pre_post_processors
@@ -187,6 +220,10 @@ def _policy_action(policy, preprocessor, postprocessor, policy_obs, device):
     @output: np.ndarray qpos target vector.
     @scenario: Produce one qpos target while LeRobot internally manages its action chunk cache.
     """
+    if preprocessor is None and postprocessor is None:
+        from evaluation.isolated_policy import IsolatedPolicy
+        if isinstance(policy, IsolatedPolicy):
+            return policy.action(policy_obs)
     batch = {key: value.to(device) for key, value in policy_obs.items()}
     with torch.inference_mode():
         action = postprocessor(policy.select_action(preprocessor(batch)))
@@ -303,10 +340,42 @@ def main(args):
     policy, preprocessor, postprocessor, config = _load_policy(checkpoint, dataset_root, repo_id, device)
     image_shape = config.input_features["observation.images.head_camera"].shape
     image_height, image_width = int(image_shape[1]), int(image_shape[2])
-    output = output_dir / f"{task_name}_{Path(checkpoint).name}_{datetime.now(timezone(timedelta(hours=8))).strftime('%Y%m%d%H%M%S')}"
-    output.mkdir(parents=True, exist_ok=False)
-    successes, records, seed, accepted = 0, [], seed_value * 100000 + 100000, 0
+    identity = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    resume_file = output_dir / ".eval_resume.json"
+    if resume_file.exists():
+        saved = json.loads(resume_file.read_text())
+        if saved["identity"] != identity:
+            raise RuntimeError("Evaluation resume configuration mismatch")
+        output = Path(saved["output"])
+        records, seed = saved["records"], saved["seed"]
+        if records and saved.get("policy_worker_environment") != os.environ.get("EMIX_POLICY_WORKER_ENV"):
+            raise RuntimeError("Evaluation resume policy environment mismatch; preserve prior results and start a new evaluation")
+        accepted = len(records)
+        successes = sum(int(row["success"]) for row in records)
+    else:
+        output = output_dir / f"{task_name}_{Path(checkpoint).name}_{datetime.now(timezone(timedelta(hours=8))).strftime('%Y%m%d%H%M%S')}"
+        output.mkdir(parents=True, exist_ok=False)
+        successes, records, seed, accepted = 0, [], seed_value * 100000 + 100000, 0
+    def save_progress():
+        temporary = resume_file.with_suffix(".tmp")
+        temporary.write_text(json.dumps(dict(identity=identity, output=str(output),
+                                            records=records, seed=seed,
+                                            policy_worker_environment=os.environ.get("EMIX_POLICY_WORKER_ENV")), indent=2))
+        os.replace(temporary, resume_file)
+    attempts_in_process = 0
+    def persist_and_recycle():
+        nonlocal attempts_in_process
+        faulthandler.cancel_dump_traceback_later()
+        save_progress()
+        attempts_in_process += 1
+        if attempts_in_process >= 10 and len(records) < episodes:
+            LOGGER.info("Recycling native runtime at next seed=%d, completed=%d", seed, len(records))
+            os.chdir(Path(__file__).resolve().parents[1])
+            os.execv(sys.executable, [sys.executable, "-u", str(Path(__file__).resolve()), *sys.argv[1:]])
+    save_progress()
     while accepted < episodes:
+        LOGGER.info("Seed %d BEGIN expert validation, completed=%d", seed, accepted)
+        faulthandler.dump_traceback_later(1200, exit=True)
         task, task_cfg = _build_task(task_name, task_config, piper_distance, benchmark_root)
         try:
             task.setup_demo(now_ep_num=accepted, seed=seed, is_test=True, **task_cfg)
@@ -314,17 +383,26 @@ def main(args):
             valid = task.plan_success and task.check_success()
             task.close_env()
         except Exception as error:
-            LOGGER.warning("Skipping invalid seed %d: %s", seed, error)
+            from envs.left.left_task_base import SceneInitRejectError
+            if not isinstance(error, SceneInitRejectError) and not _is_missing_move_target(error):
+                LOGGER.exception("Expert validation failed unexpectedly at seed %d; restart this seed", seed)
+                raise
+            LOGGER.warning("Skipping infeasible expert seed %d (%s): %s",
+                           seed, type(error).__name__, error)
             try:
                 task.close_env()
             except Exception:
                 pass
             seed += 1
+            persist_and_recycle()
             continue
         if not valid:
             seed += 1
+            persist_and_recycle()
             continue
         task, task_cfg = _build_task(task_name, task_config, piper_distance, benchmark_root)
+        LOGGER.info("Seed %d BEGIN policy rollout", seed)
+        faulthandler.dump_traceback_later(1200, exit=True)
         episode_video_path = output / "videos" / f"episode_{accepted:04d}.mp4"
         if save_video:
             task_cfg["eval_video_save_dir"] = str(episode_video_path.parent)
@@ -379,12 +457,17 @@ def main(args):
         accepted += 1
         seed += 1
         LOGGER.info("Episode %d/%d success=%s", accepted, episodes, success)
+        persist_and_recycle()
     with open(output / "metrics.json", "w", encoding="utf-8") as handle:
         json.dump({"success_rate": successes / episodes, "successes": successes, "episodes": episodes,
                    "records": records, "image_noise": image_noise.to_dict(),
                    "image_noise_seed": image_noise_seed, "checkpoint": checkpoint,
                    "rt_denoiser_requested": os.environ.get("ROBOTWIN_RT_DENOISER", "oidn"),
-                   "protocol": payload.get("protocol")}, handle, indent=2)
+                   "protocol": payload.get("protocol"),
+                   "policy_worker_environment": os.environ.get("EMIX_POLICY_WORKER_ENV"),
+                   "runtime_recovery": {"version": 1, "recycle_seed_attempts": 10,
+                                        "phase_timeout_seconds": 1200,
+                                        "skippable_exceptions": ["SceneInitRejectError", "missing_move_target"]}}, handle, indent=2)
 
 
 if __name__ == "__main__":

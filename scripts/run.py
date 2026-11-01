@@ -499,32 +499,31 @@ def validate_worker_gpus(config: dict[str, Any], batches: dict[str, list[str]]) 
 
 
 def validate_evaluation_runtime(config: dict[str, Any]) -> None:
-    """Fail before training when the evaluation policy stack cannot import.
-
-    The evaluation stage (``evaluation/evaluate.py``) imports
-    ``lerobot.policies.diffusion.modeling_diffusion``, which transitively pulls
-    in ``diffusers`` and ``huggingface_hub``.  A version drift there (e.g. a
-    ``huggingface_hub`` too old for ``diffusers``) only surfaces at eval time,
-    after an entire training run has completed — historically as
-    ``ImportError: cannot import name 'DDUFEntry' from 'huggingface_hub'``.
-    Probe the exact import now so the flow fails fast instead of after hours.
-    """
+    """Check the policy stack in the environment that actually loads it."""
+    worker_env = os.environ.get("EMIX_POLICY_WORKER_ENV")
+    if worker_env:
+        training_env = per_gpu_environment(config, None, "training")
+        if worker_env != training_env:
+            raise ValueError(
+                f"EMIX_POLICY_WORKER_ENV={worker_env!r} must match "
+                f"environments.training={training_env!r}"
+            )
+        environment_key = "training"
+    else:
+        environment_key = "evaluation"
     probe = (
         "from lerobot.policies.diffusion.modeling_diffusion import DiffusionRgbEncoder; "
         "print(DiffusionRgbEncoder.__name__)"
     )
-    command = conda_command(config, "evaluation", None, "python", "-c", probe)
+    command = conda_command(config, environment_key, None, "python", "-c", probe)
     try:
         subprocess.run(command, cwd=ROOT, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as error:
         stderr = (error.stderr or "").strip().splitlines()
         detail = "\n".join(stderr[-5:]) if stderr else str(error)
         raise RuntimeError(
-            f"The evaluation policy stack cannot import in environments.evaluation "
-            f"({per_gpu_environment(config, None, 'evaluation')!r}). "
-            "Check that lerobot/diffusers and huggingface_hub are mutually "
-            "compatible (diffusers >= 0.34 requires huggingface_hub >= 0.27).\n"
-            f"{detail}"
+            f"The policy stack cannot import in environments.{environment_key} "
+            f"({per_gpu_environment(config, None, environment_key)!r}).\n{detail}"
         ) from error
 
 
@@ -1112,7 +1111,7 @@ def run_training_task(
             print(message, end="", flush=True)
         else:
             incomplete_eval = eval_output_dir(task, config, emix=emix, patch=patch)
-            if incomplete_eval.exists():
+            if incomplete_eval.exists() and not (incomplete_eval / ".eval_resume.json").exists():
                 remove_artifact(incomplete_eval, f"incomplete {kind} evaluation", log)
             stages.append(
                 (
