@@ -2,6 +2,10 @@
 
 正式实验结果汇总索引。每个结果页记录协议、数据来源、逐任务 metrics 和结论边界。
 
+## 统一结果汇报格式
+
+对于包含 Baseline、Mix、Patch 三个实验臂的实验，每个任务及总体汇总都必须同时报告五项：Baseline 原始结果、Mix 原始结果、Patch 原始结果、Mix − Baseline、Patch − Baseline。不得只报三种原始结果或只报差值。原始结果需包含成功次数/总评估次数及成功率；差值以百分点（pp）表示，正值代表高于 Baseline，负值代表低于 Baseline，零代表持平。其他实验臂也按同一规则报告：给出每个实验臂自身的结果，并给出该实验臂减去 Baseline 的差值。后续口头进度和结果汇报沿用此格式，并说明汇总样本数。
+
 | 实验 | 日期 | 状态 / 结论 | 详情 |
 |---|---|---|---|
 | sin-v0-patch，left_oppo_cam | 2026-10-30 | 有效十任务批次；BaselineDP 38.7%，Mix DP 38.3%，Patch DP 38.3%。单 seed 描述性结果。 | [Patch 批次结果](results/20261030-sin-v0-patch-results.md) |
