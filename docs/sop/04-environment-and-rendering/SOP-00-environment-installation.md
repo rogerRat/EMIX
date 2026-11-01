@@ -1,6 +1,6 @@
 # SOP-00：Linux 无头服务器环境安装与 SAPIEN 验收
 
-Last modified: 2026-10-29 CST.
+Last modified: 2026-11-01 CST.
 
 本文适用于 Ubuntu 22.04、已由宿主机提供 NVIDIA 驱动、容器具有
 `compute,utility,graphics` 能力的无头服务器。已在 RTX 5090 / 驱动
@@ -8,9 +8,9 @@ Last modified: 2026-10-29 CST.
 `DISPLAY` 和 X11 不是本流程的前提；真正的图形验收标准是 NVIDIA Vulkan
 ICD 能枚举 GPU，且 SAPIEN 能返回相机帧。
 
-## 1. 三个安装入口与依赖边界
+## 1. 安装入口与依赖边界
 
-所有命令从仓库根目录运行。三个安装入口、对应的依赖清单与图形探针统一位于
+所有命令从仓库根目录运行。安装入口、对应的依赖清单与图形探针统一位于
 `dependencies/`；脚本通过自身位置定位仓库，可从其他工作目录调用。
 
 | 入口 | 负责 | 对应依赖 |
@@ -18,10 +18,11 @@ ICD 能枚举 GPU，且 SAPIEN 能返回相机帧。
 | `bash dependencies/_instal_sapien.sh --python PATH` | 检测或安装系统 Vulkan/EGL/GLVND 包，安装 SAPIEN Python 栈，运行 Vulkan 和 SAPIEN 探针 | `dependencies/requirements-sapien.txt`；Ubuntu `libvulkan1`, `vulkan-tools`, `libegl1`, `libgl1`, `libglx0`, `libopengl0` |
 | `bash dependencies/_install.sh` | 创建或复用 `emix`；安装 CUDA PyTorch、LeRobot 和主环境依赖 | `dependencies/requirements.txt` 的兼容子集；PyTorch cu128 索引 |
 | `bash dependencies/_install_twin.sh` | 创建或复用 `emix-twin`；调用 SAPIEN 入口，安装 CUDA PyTorch、RoboTwin 运行时与 Curobo；Blackwell 默认构建 CUDA OIDN | `dependencies/requirements-emix-twin.txt`（引用 `dependencies/requirements-sapien.txt`） |
+| `bash dependencies/install_isolated.sh` | 使用 AutoDL 网络加速和数据盘缓存，依次安装并验证两套环境；`--check` 只验证 | 上述两份清单及 `dependencies/requirements-policy-runtime.txt` |
 
 `_instal_sapien.sh` 不创建 Conda 环境，也不安装或更新 NVIDIA 驱动。
 `_install.sh` 不改动 `emix-twin`。`_install_twin.sh` 不改动 `emix`。
-三个入口均复用已存在的环境，不删除环境或数据。
+各入口均复用已存在的环境，不删除环境或数据。
 RoboTwin 的第三方资产和策略检查点需另行准备；安装脚本不下载数据集。
 
 主环境安装入口 _install.sh 会在 Debian/Ubuntu 上检查并补齐 FFmpeg 共享运行库。
@@ -52,14 +53,15 @@ graphics 是否可用；`dependencies/if_visual.py` 会读取容器 PID 1 环境
 ## 3. 安装与只读复核
 
 ```bash
-# 训练、转换和索引环境；大体量 PyTorch 下载只在首次安装时发生。
-bash dependencies/_install.sh
-
-# RoboTwin 仿真环境；在有 graphics 的无头容器中自动检查 EGL/Vulkan。
-bash dependencies/_install_twin.sh
+# AutoDL 一键安装，使用 /root/autodl-tmp 保存 Conda 环境和下载缓存。
+bash dependencies/install_isolated.sh
 
 # 以后只检查已有环境，不修改系统包或 Python 包。
-bash dependencies/_install_twin.sh --check
+bash dependencies/install_isolated.sh --check
+
+# 如需单独修复其中一套环境，仍可运行各自入口：
+bash dependencies/_install_twin.sh
+bash dependencies/_install.sh
 ```
 
 只安装或复核 SAPIEN 基础图形组件时，先提供目标环境的 Python 路径：
@@ -111,7 +113,9 @@ python dependencies/if_visual.py --denoiser oidn
   索引安装 Torch 与 LeRobot，再将冲突项过滤到 `/tmp` 临时清单。LeRobot
   0.4.4 依赖的 `rerun-sdk` 要求 NumPy 2，因此主环境固定 NumPy 2.2.6、
   OpenCV 4.12.0.88 和 `packaging==25.0`；仿真环境仍独立固定 NumPy 1.26.4，
-  供 TOPPRA 扩展使用。不要直接安装整份历史快照。
+  供 TOPPRA 扩展使用。主安装入口还以可编辑模式安装仓库的
+`embodied_mixup` 包，使 `train/train.py` 从子目录启动时也能导入。
+不要直接安装整份历史快照。
 
 主环境默认保留 LeRobot 的视频后端自动选择。未在实验配置中明确设置
 dataset.video_backend 时，不要由批次生成脚本强制选择 PyAV。2026-10-29 对
@@ -119,7 +123,37 @@ EMIX 逐帧索引读取进行同样本对比：TorchCodec 平均 0.076 秒/样�
 平均 2.512 秒/样本；TorchCodec 运行库缺失会同时导致视频读取失败或训练数据
 加载明显变慢。
 
-## 5. 故障定位
+## 5. 策略与仿真的进程隔离
+
+`emix-twin` 固定 NumPy 1.26.4、TOPPRA 0.6.7、MPLib 0.2.1、
+SAPIEN 3.0.0b1 和 Gymnasium 0.29.1。`emix` 使用 LeRobot 0.4.4、
+rerun-sdk 0.26.2、NumPy 2.2.6 和 Gymnasium 1.4.0。两套依赖不能在
+同一 Python 进程中同时满足。`requirements-emix-twin.txt` 不安装
+LeRobot；策略侧版本集中在 `requirements-policy-runtime.txt`。
+
+运行评估时，`evaluation/evaluate.py` 在仿真环境中运行，设置
+`EMIX_POLICY_WORKER_ENV=emix` 后通过 Unix socket 与策略子进程交换
+观测和动作，并同步 Torch CPU/GPU 随机状态。策略子进程用 `emix`
+加载检查点。正式 EXP-seg 的 `scripts/run_seg_task_first.py` 会自动设置
+这个变量。手工评估示例：
+
+```bash
+EMIX_POLICY_WORKER_ENV=emix conda run -n emix-twin \
+  python evaluation/evaluate.py --config path/to/evaluation.yaml
+```
+
+在 AutoDL 上重新创建而不触碰原环境时，可设置
+`EMIX_ENV_NAME=emix-reinstall EMIX_TWIN_ENV_NAME=emix-twin-reinstall`
+再运行 `install_isolated.sh`。同一组变量也用于 `--check`。
+数据盘位置可用 `EMIX_DATA_DISK` 覆盖；脚本读取
+`/etc/network_turbo`，PyPI 使用清华镜像，PyTorch CUDA 轮子使用官方
+cu128 索引。离线复核包括两个环境的 `pip check`、仿真渲染/Curobo
+探针和策略导入。正式评估前还应使用真实检查点做单回合运行验证。
+
+原始 GIL 异常的底层根因尚未证实；进程隔离消除已发现的包版本冲突，
+并让下一次异常可以分别定位于仿真进程或策略进程。
+
+## 6. 故障定位
 
 | 现象 | 检查与处理 |
 | --- | --- |
@@ -138,13 +172,13 @@ Vulkan 与 SAPIEN 仍正常工作。不要把该节点的缺失直接判为此�
 即可运行批次入口。`scripts/dataflow.sh --cuda N` 会对指定 CUDA 索引进行可用性
 检查，并根据实际计算能力应用 Blackwell 的库路径修复；不再按显卡序号推断型号。
 
-## 6. 验收范围
+## 7. 验收范围
 
 `SAPIEN_RENDER=PASS` 加上独立物理步进通过，证明当前容器的 GPU、Vulkan
 和 SAPIEN 基础仿真路径可用。完整 RoboTwin 任务还需要对象/背景资产、
 任务配置、Curobo 运行时和策略检查点；这些不由 SAPIEN 基础探针证明。
 
-## 7. 2026-10-19 单卡容器实测
+## 8. 2026-10-19 单卡容器实测
 
 | 验收项 | 实测结果 |
 | --- | --- |

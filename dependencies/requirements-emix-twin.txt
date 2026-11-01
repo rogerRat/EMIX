@@ -1,12 +1,8 @@
 # RoboTwin collection/evaluation runtime.  Description-generation SDKs are
 # intentionally excluded: the flow only consumes the checked-in instructions.
 # TOPPRA ships a NumPy-1.x ABI extension, so NumPy 2 is incompatible.
-# huggingface-hub must satisfy lerobot 0.4.4 (>=0.34.2) and diffusers 0.35.2
-# (>=0.34.0). An older hub (e.g. 0.25.0) breaks the evaluation import chain
-# with `ImportError: cannot import name 'DDUFEntry' from 'huggingface_hub'`
-# exactly when the flow reaches the eval stage, after a full training run.
-# 0.35.3 matches the `emix` training environment.
-huggingface-hub==0.35.3
+# LeRobot and its NumPy-2-only rerun-sdk dependency live in the policy
+# process. Evaluation talks to that process over a Unix socket.
 -r requirements-sapien.txt
 toppra==0.6.7
 warp-lang==1.12.0

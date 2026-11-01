@@ -59,12 +59,14 @@ Last modified: 2026-10-29 CST.
 
 主环境安装会确保 TorchCodec 所需的 FFmpeg 共享运行库。训练配置未指定解码后端时，保留 LeRobot 的自动选择；EMIX 的逐帧索引读取优先使用 TorchCodec，避免将 PyAV 作为通用默认值。修复背景和实测对比见 [TorchCodec 与 FFmpeg 运行库记录](docs/results/20261029-torchcodec-ffmpeg-runtime.md)。
 
-项目使用两个独立的 Conda 环境。`emix` 用于数据转换、索引与训练；
-`emix-twin` 用于 RoboTwin 仿真。Linux 无头服务器只要容器暴露 NVIDIA
+项目使用两个独立的 Conda 环境。`emix` 用于数据转换、索引、训练和
+LeRobot 策略推理；`emix-twin` 用于 RoboTwin 仿真。评估时仿真进程设置
+`EMIX_POLICY_WORKER_ENV=emix`，由独立进程载入策略，避免在 NumPy 1.x
+仿真进程内载入 LeRobot 的 NumPy 2 依赖。Linux 无头服务器只要容器暴露 NVIDIA
 `graphics` 能力，就可以用 Vulkan ICD 启动 SAPIEN，不需要 X11 或 `DISPLAY`。
 在 Ubuntu 22.04 + RTX 5090 上，缺少系统 `libEGL.so.1` 曾使 Vulkan 无法
 创建实例；安装 EGL/GLVND 包后，物理步进和 GPU 相机渲染均通过。
-安装脚本与三个依赖清单集中在根目录 `dependencies/`；默认批次配置只使用
+安装脚本与依赖清单集中在根目录 `dependencies/`；默认批次配置只使用
 CUDA 设备 0。仿真安装会按可见 GPU 的计算能力自动决定是否构建 Blackwell OIDN，
 并在 `--check` 中显式运行 OIDN 去噪相机探针。
 
@@ -75,12 +77,16 @@ CUDA 设备 0。仿真安装会按可见 GPU 的计算能力自动决定是否�
 | `dependencies/_instal_sapien.sh` | 检测、补齐 Vulkan/EGL 与 SAPIEN 组件，并实测无头渲染；不创建 Conda 环境 |
 | `dependencies/_install.sh` | 一键创建或复用主环境 `emix` |
 | `dependencies/_install_twin.sh` | 一键创建或复用仿真环境 `emix-twin`，调用 SAPIEN 检查并安装仿真依赖 |
+| `dependencies/install_isolated.sh` | 使用 AutoDL 加速和数据盘缓存安装两套环境，并验证隔离边界 |
 
 ```bash
-bash dependencies/_install.sh
-bash dependencies/_install_twin.sh
-# 仿真环境的只读复核：
-bash dependencies/_install_twin.sh --check
+bash dependencies/install_isolated.sh
+# 以后只验证，不重新安装：
+bash dependencies/install_isolated.sh --check
+
+# 手工运行评估时，显式指定 LeRobot 策略环境：
+EMIX_POLICY_WORKER_ENV=emix conda run -n emix-twin \
+  python evaluation/evaluate.py --config path/to/evaluation.yaml
 ```
 
 如果只需验证已存在的 Python 环境是否具备 SAPIEN 图形能力：

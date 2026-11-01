@@ -2,7 +2,7 @@
 
 set -eo pipefail
 
-ENV_NAME="emix"
+ENV_NAME="${EMIX_ENV_NAME:-emix}"
 PYTHON_VERSION="3.10"
 
 TORCH_CUDA_TAG="cu128"
@@ -134,36 +134,47 @@ echo "============================================================"
 # LeRobot pulls rerun-sdk>=0.24, which requires NumPy 2, and requires
 # packaging<26. SAPIEN requires opencv-python while LeRobot uses the headless
 # wheel; keep both wheels on the same NumPy-2-compatible release.
-python -m pip install "setuptools<81" "numpy==2.2.6" \
-    "opencv-python==4.12.0.88" "opencv-python-headless==4.12.0.88" \
-    "packaging==25.0"
+python -m pip install -r "${SCRIPT_DIR}/requirements-policy-runtime.txt"
+# train/train.py is launched by path, so the project package must be installed.
+python -m pip install --no-deps -e "${SCRIPT_DIR}/.."
 
 echo ""
 echo "============================================================"
 echo "[Step 6/6] Verifying critical imports"
 echo "============================================================"
 
-python -c "
-import lerobot;        print(f'lerobot:       {lerobot.__version__}')
-import torch;          print(f'torch:         {torch.__version__}')
-import torchcodec;     print(f'torchcodec:    {torchcodec.__version__}')
-import torchvision;    print(f'torchvision:   {torchvision.__version__}')
-import sapien;         print(f'sapien:        {sapien.__version__}')
-import gymnasium;      print(f'gymnasium:     {gymnasium.__version__}')
-import h5py;           print(f'h5py:          {h5py.__version__}')
-import cv2;            print(f'opencv:        {cv2.__version__}')
-import numpy;          print(f'numpy:         {numpy.__version__}')
-import diffusers;      print(f'diffusers:     {diffusers.__version__}')
-import accelerate;     print(f'accelerate:    {accelerate.__version__}')
-import datasets;       print(f'datasets:      {datasets.__version__}')
-import sklearn;        print(f'scikit-learn:  {sklearn.__version__}')
-import hdbscan;        print("hdbscan:       available")
-import seaborn;        print(f'seaborn:       {seaborn.__version__}')
-import umap;           print(f'umap-learn:    {umap.__version__}')
+python - <<'PY_IMPORT_CHECK'
 import importlib.metadata as metadata
-print(f'transformers:  {metadata.version(\"transformers\")}')
-print(f'num2words:     {metadata.version(\"num2words\")}')
-"
+import lerobot
+import torch
+import torchcodec
+import torchvision
+import sapien
+import gymnasium
+import h5py
+import cv2
+import numpy
+import diffusers
+import accelerate
+import datasets
+import sklearn
+import hdbscan
+import seaborn
+import umap
+for name, module in (
+    ('lerobot', lerobot), ('torch', torch), ('torchcodec', torchcodec),
+    ('torchvision', torchvision), ('sapien', sapien),
+    ('gymnasium', gymnasium), ('h5py', h5py), ('opencv', cv2),
+    ('numpy', numpy), ('diffusers', diffusers),
+    ('accelerate', accelerate), ('datasets', datasets),
+    ('scikit-learn', sklearn), ('seaborn', seaborn),
+    ('umap-learn', umap),
+):
+    print(f'{name}: {module.__version__}')
+print('hdbscan: available')
+for name in ('transformers', 'num2words'):
+    print(f'{name}: {metadata.version(name)}')
+PY_IMPORT_CHECK
 python -m pip check
 
 python - <<'PY_TORCHCODEC_SMOKE'

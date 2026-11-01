@@ -4,7 +4,7 @@
 # errexit and pipefail, but leave nounset off while installing packages.
 set -Eeo pipefail
 
-ENV_NAME=emix-twin
+ENV_NAME=${EMIX_TWIN_ENV_NAME:-emix-twin}
 PYTHON_VERSION=3.10
 TORCH_INDEX_URL="https://download.pytorch.org/whl/cu128"
 TORCH_VERSION="2.7.1+cu128"
@@ -44,7 +44,7 @@ done
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ROBOTWIN_ROOT="$ROOT_DIR/third_party/RoboTwin"
-CUROBO_DIR="$ROBOTWIN_ROOT/envs/curobo"
+CUROBO_DIR="${EMIX_CUROBO_DIR:-$ROBOTWIN_ROOT/envs/curobo}"
 if [[ ! -d "$ROBOTWIN_ROOT/envs" ]]; then
     echo "[emix-twin] RoboTwin source is missing: $ROBOTWIN_ROOT" >&2
     exit 1
@@ -135,7 +135,7 @@ conda install -y -c nvidia "cuda-nvcc=$CUDA_NVCC_VERSION"
 "$PYTHON_BIN" -m pip install \
     "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" \
     --index-url "$TORCH_INDEX_URL"
-"$PYTHON_BIN" -m pip install -r "$ROOT_DIR/dependencies/requirements-emix-twin.txt"
+(cd "$ROOT_DIR/dependencies" && "$PYTHON_BIN" -m pip install -r requirements-emix-twin.txt)
 
 gpu_arches="$($PYTHON_BIN - <<'PY'
 import torch
@@ -187,6 +187,7 @@ then
     echo "[emix-twin] Reusing Curobo extensions for $TORCH_CUDA_ARCH_LIST"
 else
     CUDA_HOME="$CONDA_PREFIX" MAX_JOBS="${MAX_JOBS:-2}" \
+        SETUPTOOLS_SCM_PRETEND_VERSION_FOR_NVIDIA_CUROBO="${CUROBO_VERSION#v}" \
         "$PYTHON_BIN" -m pip install --no-deps --no-build-isolation -e "$CUROBO_DIR"
     printf '%s\n' "$TORCH_CUDA_ARCH_LIST" > "$CUROBO_DIR/.emix-built-arches"
 fi
