@@ -546,3 +546,23 @@ Current evaluation remains active (8/100 at inspection). No experiment process w
 - Formal queue now processes the first five configured tasks, completing `seg_mix`, `seg_patch`, `seg_mix_overlap033`, and `seg_patch_overlap033` for each task before proceeding. Training/policy inference uses `emix-reinstall`; RoboTwin evaluation uses `emix-twin-reinstall`.
 - First task `blocks_ranking_rgb_left_oppo_cam` completed 30,000 training steps. Its evaluation stopped after 43/100 accepted episodes at expert seed 100125 when RoboTwin had no grasp pose and `Action` rejected a null move target. This was a regression in EMIX's recently narrowed expert-exception handling, not a demonstrated RoboTwin grasp-code change or GIL recurrence.
 - The evaluator now skips only `SceneInitRejectError` and the exact RoboTwin null move-target assertion during expert validation; native/GIL and unknown exceptions remain fatal for diagnosis. The formal queue restarted at 11:20 with the preserved 43 records and final checkpoint. No new 100-episode result is claimed yet.
+
+
+## 2026-11-01 18:01 CST — two-lane scheduling diagnostic
+
+The formal task-first queue was paused at `seg_patch` evaluation 53/100
+(next seed 100163). Diagnostic outputs were isolated under
+`outputs/diagnostics/parallel-a-20261101`. Two 800-step trainings completed
+concurrently with batch size 64 and 16 dataloader workers each; their combined
+steady throughput was about 16.2 steps/s versus about 13.1 steps/s for the
+earlier full single training. Two concurrent evaluations completed two episodes
+each in 9m37s with about 12.6 GB peak GPU memory and no OOM. A mixed train/eval
+run also produced a checkpoint and one complete episode metric. A duplicate
+diagnostic launch against the same nonempty output directory was refused by
+the training guard; no formal artifact was affected. These short diagnostic
+metrics are not formal outcome estimates.
+
+Scheme A was selected and scheme B was not run. The queue restarted at 18:01
+with at most two arms active for one task at a time. Completed work is reused
+and the original `seg_patch` resume state remains intact. At startup,
+`seg_patch` evaluation and `seg_mix_overlap033` training ran concurrently.
