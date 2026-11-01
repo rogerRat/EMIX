@@ -1,3 +1,38 @@
+# 当前编排标准：sin-v0-seg 五任务四臂
+
+更新：2026-11-01（北京时间）。本节是当前 sin-v0-seg 正式实验的执行标准；下方 sin-v0-patch 单线记录属于历史实验，不适用于本批。实验协议和验证记录分别见 [EXP.md](EXP.md) 与 [PROG.md](PROG.md)。
+
+## 队列与资源规则
+
+1. 使用四臂配置中一致的前五个任务，按配置顺序逐任务推进：`blocks_ranking_rgb_left_oppo_cam`、`place_burger_fries_left_oppo_cam`、`place_cans_plasticbox_left_oppo_cam`、`stack_blocks_two_left_oppo_cam`、`blocks_ranking_size_left_oppo_cam`。
+2. 每个任务依次排队 `seg_mix`、`seg_patch`、`seg_mix_overlap033`、`seg_patch_overlap033`。同一任务最多运行两个臂；每个臂独立完成训练→评估，任一臂结束后将下一个待处理臂补入空位。四臂全部成功后才进入下一任务，不跨任务抢跑。
+3. 两个臂各自拥有独立的训练、仿真、策略 worker 和输出/日志目录；只读共享已完成的数据集与索引。训练与策略推理使用 `emix-reinstall`，RoboTwin 仿真评估使用 `emix-twin-reinstall`。不得在同一输出目录重复启动臂，也不得另加第三个 GPU 作业。
+4. 保持各臂正式协议：seed 0、30,000 训练步、batch size 64、每个训练进程 16 个 DataLoader workers、100 个有效评估回合。并行的是两个独立臂，不拆分单臂的评估种子序列。续跑优先复用已完成 checkpoint、metrics 和已接受回合；不得把诊断指标计入正式结果。
+5. 一个臂报错时保留现场日志与进度，停止启动新臂，待另一个在运行的臂退出后让编排器报错。先定位原生异常、显存不足、进度停滞或总吞吐下降，再决定续跑；若双线不稳定或无收益，用 `--parallel-arms 1` 回退。环境安装期间不启动或中断正式队列。
+
+## 启动、巡检与恢复
+
+正式入口为 `scripts/run_seg_task_first.py`；当前正式包装脚本为 `/root/autodl-tmp/sin-v0-seg/formal/run_all_arms.sh`，已经传入 `--parallel-arms 2`。在远端 `/root/EMIX` 中启动或恢复时，先核验没有另一条正式队列，再通过原包装脚本运行；当前 tmux 会话名为 `sin-v0-seg-task-first`。直接运行的等价参数为：
+
+```bash
+export CONDA_ENVS_PATH=/root/autodl-tmp/conda-envs
+export EMIX_POLICY_WORKER_ENV=emix-reinstall
+/root/miniconda3/bin/conda run --no-capture-output -n emix-reinstall \
+  python -u scripts/run_seg_task_first.py \
+  --training-env emix-reinstall --evaluation-env emix-twin-reinstall \
+  --parallel-arms 2
+```
+
+巡检以 tmux、各臂日志、checkpoint、100 回合 `metrics.json` 和 `nvidia-smi` 为准，确认实际回合/步数前进、两个槽位及显存余量。中断后从相同正式入口恢复，先核验已完成的臂和评估断点，避免覆盖输出。完整结果只在每臂正式评估完成后确认。
+
+## 双线选择的证据与适用边界
+
+2026-11-01 的方案 A 短测中，两条各 800 步的并行训练合计约 16.2 步/秒，先前正式单训练约 13.1 步/秒，合计吞吐约增 24%；两条并行评估各完成 2 回合，合计 4 回合用时 9 分 37 秒，峰值显存约 12.6/32 GB；训练＋评估同跑也完成 checkpoint 和 1 回合指标。因任务、种子、样本长度不同，评估耗时不是严格对照，整批节省时间尚未实测。方案 A 因可运行且短测显示收益而用于本批，方案 B（先集中训练再双评估）未执行。
+
+本规则适用于当前单张 RTX 5090、隔离环境及上述负载；后续同类批次先做短测、核对显存和总吞吐，再启用双槽。其他硬件或负载先从单槽开始验证，不把双线视为无条件加速。
+
+---
+
 # sin-v0-patch 执行编排记录
 
 更新时间：2026-10-23 15:03 CST（远端时区 Asia/Shanghai）。实验协议以 [EXP.md](EXP.md) 为准，执行细节遵循全部 SOP；本文只记录资源排程、状态与巡检决策。

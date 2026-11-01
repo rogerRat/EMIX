@@ -2,10 +2,12 @@
 
 # SOP-05：批量资产构建（assets.py）与实验流水线（run.py）
 
-环境安装以 [SOP-00](../04-environment-and-rendering/SOP-00-environment-installation.md) 为准。下文的
-当前默认 `gpu_batches` 和 `assets.py --gpus` 均使用 CUDA 0，适用于
-单张 RTX 5090。安装入口按实际计算能力构建 Blackwell 所需 OIDN，
-并统一使用 `emix-twin` 环境。
+下文原有 `assets.py` / `run.py` 入口的环境安装以 [SOP-00](../04-environment-and-rendering/SOP-00-environment-installation.md) 为准。
+其默认 `gpu_batches` 和 `assets.py --gpus` 均使用 CUDA 0，适用于单张 RTX 5090；
+该安装入口按实际计算能力构建 Blackwell 所需 OIDN，并使用 `emix-twin` 环境。
+当前 `sin-v0-seg` 的隔离环境与双槽入口见下段及编排标准。
+
+当前 `sin-v0-seg` 五任务四臂实验采用经过短测的单卡双槽编排，每个任务内最多并行两个独立训练→评估臂，四臂完成后再进入下一任务；执行参数、恢复和回退条件以 [当前编排标准](../../ORCHE.md) 为准。下文 `run.py` 每卡一个 worker 的说明针对其原有批量入口，不覆盖该实验的 `run_seg_task_first.py` 上层编排。
 
 本文档说明两个批量驱动脚本的当前用法：
 
