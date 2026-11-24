@@ -150,8 +150,10 @@ EMIX_POLICY_WORKER_ENV=emix conda run -n emix-twin \
 cu128 索引。离线复核包括两个环境的 `pip check`、仿真渲染/Curobo
 探针和策略导入。正式评估前还应使用真实检查点做单回合运行验证。
 
-原始 GIL 异常的底层根因尚未证实；进程隔离消除已发现的包版本冲突，
-并让下一次异常可以分别定位于仿真进程或策略进程。
+旧环境的 `sin-v0-seg` 评估曾出现 pybind11 / `PyGILState_Check` 原生崩溃。
+重装并隔离为 `emix-reinstall` 与 `emix-twin-reinstall` 后，近期可见日志未再复现；
+当前将其归类为环境侧故障，具体二进制组件未被证实。评估器不再默认启用
+GIL 定向捕获或按固定尝试次数重启；若新环境复发，应保留日志并重新定位。
 
 ## 6. 故障定位
 

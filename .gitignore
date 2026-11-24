@@ -78,11 +78,14 @@ tests/
 ms_token.txt
 /scripts/temp/*
 /configs/scripts/*
+!/configs/scripts/multi_v0.yaml
+!/configs/scripts/multi_v0_searchparam.yaml
 !/configs/scripts/run.yaml
 !/configs/scripts/run_v0_noise_tn_en.yaml
 !/configs/scripts/run_v0_noise_tn_ec.yaml
 !/tests/
 /tests/*
+!/tests/test_multi_v0_mock.py
 !/tests/test_image_noise.py
 
 !/tests/test_instance_annotations.py

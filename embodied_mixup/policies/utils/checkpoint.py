@@ -116,14 +116,17 @@ def infer_start_step(checkpoint_dir: Path, fallback: int | None = None) -> int:
 
 def _load_policy_weights(policy: torch.nn.Module, pretrained_dir: Path, device: torch.device) -> dict[str, Any]:
     model_file = pretrained_dir / "model.safetensors"
+    adapter_file = pretrained_dir / "adapter_model.safetensors"
+    if adapter_file.is_file() and (pretrained_dir / "adapter_config.json").is_file():
+        if not hasattr(policy, "peft_config"):
+            raise TypeError("Checkpoint contains LoRA weights but policy is not a PEFT model")
+        from peft import set_peft_model_state_dict
+        set_peft_model_state_dict(policy, load_file(str(adapter_file), device=str(device)), adapter_name="default")
+        return {"policy_weights": True, "adapter_file": str(adapter_file)}
     if not model_file.is_file():
         raise FileNotFoundError(model_file)
-
     load_model(policy, str(model_file), strict=False, device=str(device))
-    return {
-        "policy_weights": True,
-        "model_file": str(model_file),
-    }
+    return {"policy_weights": True, "model_file": str(model_file)}
 
 
 def _load_training_state(

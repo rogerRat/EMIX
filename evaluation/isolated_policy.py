@@ -53,7 +53,8 @@ class IsolatedPolicy:
         for key in ("LD_PRELOAD", "LD_LIBRARY_PATH", "PYTHONPATH", "EMIX_POLICY_WORKER_ENV"):
             env.pop(key, None)
         conda = env.get("CONDA_EXE", "/root/miniconda3/bin/conda")
-        command = [conda, "run", "--no-capture-output", "-n", env_name, "python", "-u", "-m",
+        command = [conda, "run", "--no-capture-output",
+                   "-p" if Path(env_name).is_absolute() else "-n", env_name, "python", "-u", "-m",
                    "evaluation.isolated_policy", address, str(checkpoint), str(dataset_root), repo_id, str(device)]
         self.proc = subprocess.Popen(command, cwd=ROOT, env=env)
         self.conn = None
@@ -62,6 +63,7 @@ class IsolatedPolicy:
             self.conn = Connection(peer.detach())
             ready = self._receive()
             self.shape = tuple(ready["shape"])
+            self.policy_type = ready["policy_type"]
         except BaseException:
             self.close()
             raise
@@ -83,7 +85,11 @@ class IsolatedPolicy:
         _set_rng_state(result["rng"], self.device)
 
     def action(self, obs):
-        self.conn.send({"op": "action", "obs": {key: _pack_tensor(value) for key, value in obs.items()},
+        self.conn.send({"op": "action",
+                        "obs": {key: _pack_tensor(value) for key, value in obs.items()
+                                if isinstance(value, torch.Tensor)},
+                        "extra": {key: value for key, value in obs.items()
+                                  if not isinstance(value, torch.Tensor)},
                         "rng": _rng_state(self.device)})
         result = self._receive()
         _set_rng_state(result["rng"], self.device)
@@ -116,7 +122,8 @@ class IsolatedPolicy:
 
 def load_isolated(checkpoint, dataset_root, repo_id, device, env_name):
     policy = IsolatedPolicy(checkpoint, dataset_root, repo_id, device, env_name)
-    config = SimpleNamespace(input_features={"observation.images.head_camera": SimpleNamespace(shape=policy.shape)})
+    config = SimpleNamespace(type=policy.policy_type,
+        input_features={"observation.images.head_camera": SimpleNamespace(shape=policy.shape)})
     return policy, None, None, config
 
 
@@ -128,7 +135,8 @@ def worker(address, checkpoint, dataset_root, repo_id, device):
     conn = Connection(sock.detach())
     try:
         policy, pre, post, config = _load_policy(checkpoint, dataset_root, repo_id, device)
-        conn.send({"shape": tuple(config.input_features["observation.images.head_camera"].shape)})
+        conn.send({"shape": tuple(config.input_features["observation.images.head_camera"].shape),
+                   "policy_type": config.type})
         while True:
             request = conn.recv()
             if request["op"] == "close":
@@ -140,6 +148,7 @@ def worker(address, checkpoint, dataset_root, repo_id, device):
             elif request["op"] == "action":
                 _set_rng_state(request["rng"], device)
                 obs = {key: torch.from_numpy(_unpack_array(value)) for key, value in request["obs"].items()}
+                obs.update(request.get("extra", {}))
                 action = _policy_action(policy, pre, post, obs, device)
                 conn.send({"action": _pack_tensor(torch.from_numpy(action)), "rng": _rng_state(device)})
             else:

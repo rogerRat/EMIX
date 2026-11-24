@@ -111,7 +111,7 @@ class EmixDebugExporter:
     def __init__(self, settings: EmixDebugSettings) -> None:
         self.settings = settings
         self.exported_samples = 0
-        self._next_due_step = settings.every_n_steps
+        self._next_due_step = 1
         self.output_dir = Path(settings.output_dir or "outputs/emix_debug").expanduser().resolve()
         self._manifest_path = self.output_dir / "manifest.jsonl"
         if settings.enabled:
@@ -218,6 +218,36 @@ class EmixDebugExporter:
         if exported > 0:
             self._next_due_step = step + self.settings.every_n_steps
         return exported
+
+    def export_plain_batch(self, batch: dict[str, Any], step: int) -> int:
+        """Save one actual unaugmented training observation for the baseline arm."""
+        if not self.settings.enabled or self.finished or step < self._next_due_step:
+            return 0
+        image_keys = self._resolve_image_keys(batch)
+        if not image_keys:
+            return 0
+        try:
+            images = [_image_sequence(batch[key], 0)[0] for key in image_keys]
+            fig, axes = plt.subplots(1, len(images), figsize=(4 * len(images), 4), squeeze=False)
+            for ax, key, img in zip(axes[0], image_keys, images):
+                ax.imshow(img)
+                ax.set_title(key.removeprefix("observation.images."))
+                ax.axis("off")
+            fig.suptitle(f"Baseline training input | step={step}")
+            filename = self.output_dir / f"step_{step:08d}_sample_{self.exported_samples:05d}.png"
+            fig.savefig(filename, dpi=self.settings.dpi, bbox_inches="tight")
+            plt.close(fig)
+            with self._manifest_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"file": filename.name, "step": step,
+                                         "policy_type": self.settings.policy_type,
+                                         "kind": "baseline_raw", "image_keys": image_keys}) + "\n")
+            self.exported_samples += 1
+            self._next_due_step = step + self.settings.every_n_steps
+            LOGGER.info("[emix.debug] saved=%s", filename)
+            return 1
+        except Exception:
+            LOGGER.exception("[emix.debug] Failed to export baseline step=%d", step)
+            return 0
 
     def _resolve_image_keys(self, batch: dict[str, Any]) -> list[str]:
         configured = self.settings.image_keys

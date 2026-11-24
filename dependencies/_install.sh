@@ -146,9 +146,11 @@ echo "============================================================"
 python - <<'PY_IMPORT_CHECK'
 import importlib.metadata as metadata
 import lerobot
+import peft
 import torch
 import torchcodec
 import torchvision
+from transformers.models.siglip import check as pi_transformers_check
 import sapien
 import gymnasium
 import h5py
@@ -172,6 +174,8 @@ for name, module in (
 ):
     print(f'{name}: {module.__version__}')
 print('hdbscan: available')
+if not pi_transformers_check.check_whether_transformers_replace_is_installed_correctly():
+    raise RuntimeError('Install PI-specific Transformers dependency before using PI0.5')
 for name in ('transformers', 'num2words'):
     print(f'{name}: {metadata.version(name)}')
 PY_IMPORT_CHECK

@@ -419,3 +419,21 @@ The corrected sin-v0-patch formal run stopped at 10:29 while saving the 20,000-s
 - The active evaluator used about 125% CPU. GPU 0 RTX 5090 D sampled 74% utilization, 3338/32607 MiB, 138.32 W at 02:09:22; a preceding sample at 02:08:31 was 0%, 2476 MiB, 106.18 W. PID 246362 was the only GPU compute process. Episode progress and the later GPU sample confirm variable use during online simulator rollout, not a demonstrated stall. CPU load was 1.21/1.30/1.68; root disk had 6.2 GiB free (80% used), and `/root/autodl-tmp` had 122 GiB free (40% used).
 - Project `data/`, `outputs/`, and `logs/` resolve under `/root/autodl-tmp/`; the formal data and index artifacts are exposed through `/root/autodl-tmp/data/sin-v0-patch-oppo/formal/`, while formal outputs resolve under `/root/autodl-tmp/outputs/sin-v0-patch-oppo/formal/`. Counts above were checked against these actual formal paths.
 - No fault, resource conflict, or waiting GPU computation stage was found. No process, data, code, configuration, or queue was changed. Keep the existing single-GPU serial runbook. Running: second-task EMIX evaluation; queued: its patch train/eval and the remaining tasks. Next verify the 100-episode EMIX metrics and automatic patch transition, then continue monitoring disk capacity. Do not start a duplicate evaluator or trainer.
+
+### 2026-11-11 12:47 CST PI0.5 续训评估状态检查
+
+- 200k 训练已完成，`training_step.json` 记录 step 200000；队列进程仍在运行。
+- 当前执行 `blocks_ranking_rgb_left_oppo_cam` 的 200k 评估；12 秒内 `.eval_resume.json` 已完成回合从 19 增至 20/100。该任务尚无最终 metrics。
+- RTX 5090 显存占用两次采样约 12.3 GiB，GPU 利用率 16% 与 34%；策略工作进程及评估进程均占用显存。评估日志未见 Traceback 或 ERROR。仿真阶段 GPU 利用率波动，回合持续推进，未发现卡死。
+- 数据盘剩余约 73 GiB。继续由现有队列完成 200k 十任务评估，然后进入 300k、400k；未启动重复进程，未删除检查点。
+
+### 2026-11-12 17:53 CST PI0.5 续训进度检查
+
+- 200k 十任务评估全部完成，共 12/1000 成功（1.2%）：burger_fries 3/100、can_basket 2/100、stack_blocks_two 1/100、stack_bowls_two 6/100，其余六项为 0/100。依据 `outputs/v0-pi05-100k/eval/200000/` 下十份 metrics.json。
+- 队列已按计划清理 100k 及更早训练检查点，保留 200k；评估结果仍在。300k 续训正在运行，最新进度约 284352/300000，进度条预计剩余约 2 小时。GPU 采样占用 9221 MiB，利用率 95%，功耗 542 W；数据盘剩余约 72 GiB。300k 和 400k 评估尚未开始。
+
+### 2026-11-13 11:38 CST PI0.5 续训进度检查
+
+- 300k 训练已完成，300k checkpoint 存在且 `last` 指向 300000。200k 十任务评估结果为 12/1000；200k checkpoint 尚存，等待 300k 十任务评估完成后按队列清理。
+- 300k 已完成七项任务评估，共 4/700 成功；当前 `place_can_basket_left_oppo_cam` 已完成 86/100 回合，剩余两项尚未评估。当前评估日志未见 Traceback 或 ERROR。400k 训练尚未开始。
+- RTX 5090 采样显存 13051 MiB，GPU 利用率 54%；数据盘剩余约 72 GiB。队列进程仍在运行，无需干预。

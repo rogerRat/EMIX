@@ -1,4 +1,18 @@
-最后修改：2026-10-30
+最后修改：2026-11-05
+
+## 2026-11-05 — multi-v0 评估并发扩容
+
+- 单评估时 RTX 5090 使用约 6.7/32.6 GiB 显存、GPU 利用率约 10%，CPU 与内存有充足余量。已暂停顺序队列启动器 PID 1423（当前评估子进程继续运行），由 `scripts/parallel_multi_v0_eval.py` 调度其余 11 个未完成的 mix/patch 评估，避免同一任务被重复启动。
+- 当前为原有 1 个评估加调度器 3 个评估，共 4 个并发。稳态采样显存约 23.9/32.6 GiB，GPU 利用率 81%–98%；剩余约 8.2 GiB，不继续增加第 5 个评估以免超出显存。调度器在启动前要求至少 8 GiB 空闲、每次启动间隔 30 秒；并发数由 `outputs/multi-v0/parallel/max_jobs.txt` 控制，当前值 3。
+- 调度器逐项检查完成指标，失败任务最多重试一次；全部并行任务结束后自动恢复顺序启动器，使其核对剩余任务并写入总完成标记。日志为 `outputs/multi-v0/parallel/scheduler.log`，任务日志为同目录 `<arm>_<task>.log`。训练步数、评估 seed、episode 数和模型配置未改。 原顺序评估进程 PID 987120 完成后，`scripts/watch_multi_v0_capacity.py` 会确认其 100 回合指标并将调度器并发上限从 3 调到 4，维持总共 4 个评估；若该任务失败则不扩容，由恢复后的顺序启动器处理。
+
+## 2026-11-05 — GIL 故障归因与评估器对齐决策
+
+- 2026-10-30 至 10-31 的 `sin-v0-seg` 评估曾在 `stack_bowls_two_left_oppo_cam` 出现 pybind11 `inc_ref` / `PyGILState_Check` 错误、退出码 139 和长时间卡住。此前为保留进度而加入十次 seed 尝试后重启解释器、超时栈转储、原生异常捕获钩子，以及只放行少数专家异常的定向处理。下方旧记录保留当时事实，不代表当前推荐流程。
+- 后续重建并隔离策略与 RoboTwin 仿真环境（`emix-reinstall` / `emix-twin-reinstall`）。截至本次核查，11 月 1 日以来可见的 14 份近期远端日志、包括 `multi-v0` 评估日志，均未出现 GIL / `PyGILState_Check` 崩溃特征；baseline 曾有一次 `UnStableError`，属于物体稳定性异常，不是 GIL 故障。
+- 因故障只在旧环境中观察到，重装后未再复现，当前将其归类为**环境侧故障**；具体二进制库或 ABI 根因没有被证明。停止 GIL 定向捕获与十次尝试后的进程轮换，专家异常按 RoboTwin `main` 的跳过 seed 规则处理。评估任务对象复用、专家成功条件在 `close_env()` 后检查，也与该分支对齐。保留历史日志作为追溯依据；若新环境再次出现原生崩溃，重新独立诊断。
+- 回滚点：RoboTwin 子仓库空提交 `ee27b45` 与存档分支 `archive/20261105-pre-official-eval-alignment`（代码树仍为 `a02b3e9`），主仓指针提交 `3a7ae9c`。旧评估器另存于 `/root/autodl-tmp/archive/evaluate-pre-official-align-20261105.py`。
+- 切换边界：`multi-v0/emix-mix/place_burger_fries_left_oppo_cam` 按旧评估器完整结束并写出 100 回合指标后，才切换为 `robotwin-main-aligned-20261105`。队列下一任务 `place_cans_plasticbox_left_oppo_cam` 开始使用新评估器；旧任务结果不因代码切换而改写。
 
 ## 2026-11-01 18:01 CST — 双线方案 A 验证与正式恢复
 

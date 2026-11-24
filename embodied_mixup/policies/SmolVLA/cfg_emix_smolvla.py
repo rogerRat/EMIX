@@ -19,6 +19,11 @@ class EmixSmolVLAConfig(SmolVLAConfig):
     mixup_loss_weight: float = 1.0
     mixup_visual_keys: list[str] | None = None
     mixup_state_mode: str = "anchor"
+    mixup_image_mode: str = "linear"
+    annotation_root: str = ""
+    detect_overlap_enable: bool = False
+    detect_overlap_refuse_ratio: float = 0.5
+    segment_wise_enable: bool = False
 
     def __post_init__(self) -> None:
         super().__post_init__()

@@ -55,6 +55,10 @@ class EmixTrainConfig:
     steps: int
     save_freq: int
     log_freq: int
+    # Micro-batches accumulated per optimizer step. Effective batch size is
+    # batch_size * grad_accum_steps; ``steps`` counts optimizer steps.
+    grad_accum_steps: int = 1
+    dataset_repo_ids: list[str] | None = None
     use_policy_training_preset: bool = True
     training_mode: str = "default"
     emix: dict[str, Any] = field(default_factory=dict)
@@ -64,8 +68,10 @@ class EmixTrainConfig:
     # Encoder debug config for DiffusionRgbEncoder inspection (read-only).
     # Populated from the top-level ``encoder_debug`` YAML section.
     encoder_debug: dict[str, Any] | None = None
+    training_debug: dict[str, Any] | None = None
     image_noise: ImageNoiseConfig = field(default_factory=ImageNoiseConfig)
     protocol: dict[str, Any] = field(default_factory=dict)
+    peft: dict[str, Any] | None = None
     # All emix related configs are stored in the emix field to keep the training config clean.
 
 
@@ -90,7 +96,11 @@ class SaveableTrainConfig:
         image_noise: ImageNoiseConfig | None = None,
         protocol: dict[str, Any] | None = None,
         video_backend: str | None = None,
+        dataset_repo_ids: list[str] | None = None,
+        dataset_stats: dict[str, Any] | None = None,
     ):
+        self.dataset_repo_ids = dataset_repo_ids
+        self.dataset_stats = dataset_stats
         self.policy = policy_cfg
         self.dataset = type(
             "DatasetCfg",
@@ -103,7 +113,7 @@ class SaveableTrainConfig:
         self.training_mode = training_mode
         self.image_noise = image_noise or ImageNoiseConfig()
         self.protocol = dict(protocol or {})
-        self.peft = None
+        self.peft = {"method_type": "LORA"} if getattr(policy_cfg, "use_peft", False) else None
         self.use_policy_training_preset = True
 
     def save_pretrained(self, save_directory: Path) -> None:
@@ -119,8 +129,13 @@ class SaveableTrainConfig:
             "image_noise": self.image_noise.to_dict(),
             "protocol": self.protocol,
         }
+        if self.dataset_repo_ids is not None:
+            payload["dataset"]["repo_ids"] = self.dataset_repo_ids
         with open(save_directory / "train_config.json", "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2, sort_keys=True)
+        if self.dataset_stats is not None:
+            from .utils.multi_dataset import write_dataset_stats
+            write_dataset_stats(save_directory / "dataset_stats.json", self.dataset_stats)
 
 
 # --- Logging and CLI helpers ---
@@ -476,19 +491,26 @@ def _build_train_config(
     return EmixTrainConfig(
         policy_cfg=policy_cfg,
         dataset_root=str(payload["dataset"]["root"]),
-        dataset_repo_id=str(payload["dataset"]["repo_id"]),
+        dataset_repo_id=str(payload["dataset"].get("repo_id") or (payload["dataset"].get("repo_ids") or [None])[0]),
         output_dir=output_dir,
+        dataset_repo_ids=(
+            None if payload["dataset"].get("repo_ids") is None
+            else list(payload["dataset"]["repo_ids"])
+        ),
         batch_size=int(train_value("batch_size", 8)),
         num_workers=int(train_value("num_workers", 0)),
         steps=int(train_value("steps", 1000)),
         save_freq=int(train_value("save_freq", 1000)),
         log_freq=int(train_value("log_freq", 100)),
+        grad_accum_steps=max(1, int(train_value("grad_accum_steps", 1))),
         training_mode=training_mode,
         emix=emix_payload,
         vis_n_obs_steps=(None if vis_n_obs_steps is None else int(vis_n_obs_steps)),
         encoder_debug=encoder_debug,
+        training_debug=payload.get("training_debug"),
         image_noise=ImageNoiseConfig.from_payload(train_value("image_noise", None)),
         protocol=dict(protocol),
+        peft=(dict(payload["peft"]) if payload.get("peft") else None),
         video_backend=(
             None if (payload.get("dataset") or {}).get("video_backend") is None
             else str(payload["dataset"]["video_backend"])
@@ -504,12 +526,24 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
     from .utils.emix_loader_registry import make_emix_loader
     from .utils.emix_loader_registry_utils import EmixLoaderSettings
 
-    dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))
-    ds_meta = _load_dataset_metadata(dataset_root, cfg.dataset_repo_id)
+    if cfg.dataset_repo_ids is not None:
+        from .utils.multi_dataset import load_multi_dataset
+        if cfg.policy_cfg.type not in {"smolvla", "emix_smolvla", "pi05"}:
+            raise ValueError("Multi-task datasets are supported only for SmolVLA and PI0.5")
+        ds_meta, base_dataset = load_multi_dataset(
+            cfg.dataset_root, cfg.dataset_repo_ids, cfg.policy_cfg, cfg.video_backend,
+        )
+        dataset_root = cfg.dataset_root
+    else:
+        dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))
+        ds_meta = _load_dataset_metadata(dataset_root, cfg.dataset_repo_id)
+        base_dataset = None
     policy = make_policy(cfg.policy_cfg, ds_meta=ds_meta)
     _validate_dataset_stats(policy.config, ds_meta.stats)
 
     if cfg.training_mode == "emix":
+        if cfg.dataset_repo_ids is not None:
+            raise ValueError("Multi-task SmolVLA requires mixed training mode")
         temporal_spec = get_policy_temporal_spec(cfg.policy_cfg)
         loader_cfg = EmixLoaderSettings(
             policy_type=cfg.policy_cfg.type,
@@ -539,7 +573,7 @@ def _create_dataset_and_policy(cfg: EmixTrainConfig):
             cfg.dataset_repo_id,
             dataset_root,
         )
-        dataset = LeRobotDataset(
+        dataset = base_dataset if base_dataset is not None else LeRobotDataset(
             repo_id=cfg.dataset_repo_id,
             root=dataset_root,
             delta_timestamps=_build_delta_timestamps(
@@ -575,6 +609,12 @@ def _build_emix_dataset(cfg: EmixTrainConfig):
         seed=0,
         video_backend=cfg.video_backend,
     )
+    if cfg.dataset_repo_ids is not None:
+        from .utils.multi_index import MultiTaskEmixDataset
+        return MultiTaskEmixDataset(
+            cfg.policy_cfg.emix_index_path, cfg.dataset_repo_ids,
+            cfg.policy_cfg.type, temporal_spec, loader_cfg, cfg.dataset_root,
+        )
     dataset_root = str(require_lerobot_dataset_root(cfg.dataset_root))
     return make_emix_loader(
         policy_type=cfg.policy_cfg.type,
@@ -659,6 +699,19 @@ def _prepare_policy_batch(policy_cfg: Any, policy: Any, batch: dict[str, Any]) -
     return batch
 
 
+def _accumulation_window(step: int, grad_accum_steps: int) -> range:
+    """Micro-batch counters for one optimizer step.
+
+    @input: optimizer step index [int, 1-based], grad_accum_steps [int, >=1]
+    @output: range of 1-based micro-batch counters
+    @scenario: keep per-micro-batch derived seeds (image noise, debug export)
+        unique while one optimizer step consumes several micro-batches.
+    """
+
+    base = (int(step) - 1) * int(grad_accum_steps)
+    return range(base + 1, base + 1 + int(grad_accum_steps))
+
+
 def _move_batch_to_device(value: Any, device: torch.device) -> Any:
     """Move tensors inside nested batch containers onto one device.
 
@@ -686,12 +739,16 @@ def _write_train_config_snapshot(cfg: EmixTrainConfig) -> Path:
         "policy_type": cfg.policy_cfg.type,
         "dataset_root": cfg.dataset_root,
         "dataset_repo_id": cfg.dataset_repo_id,
+        "dataset_repo_ids": cfg.dataset_repo_ids,
         "video_backend": cfg.video_backend,
         "steps": cfg.steps,
         "batch_size": cfg.batch_size,
+        "grad_accum_steps": cfg.grad_accum_steps,
+        "effective_batch_size": cfg.batch_size * cfg.grad_accum_steps,
         "num_workers": cfg.num_workers,
         "image_noise": cfg.image_noise.to_dict(),
         "protocol": cfg.protocol,
+        "peft": cfg.peft,
     }
     snapshot_path = cfg.output_dir / "emix_train_config.json"
     with open(snapshot_path, "w", encoding="utf-8") as f:
@@ -771,9 +828,11 @@ def _snapshot_payload(cfg: EmixTrainConfig, resume_cfg: ResumeConfig, start_step
             "device": cfg.policy_cfg.device,
             "push_to_hub": bool(getattr(cfg.policy_cfg, "push_to_hub", False)),
         },
-        "dataset": {"root": cfg.dataset_root, "repo_id": cfg.dataset_repo_id},
+        "dataset": {"root": cfg.dataset_root, "repo_id": cfg.dataset_repo_id, "repo_ids": cfg.dataset_repo_ids},
         "output_dir": str(cfg.output_dir),
         "batch_size": cfg.batch_size,
+        "grad_accum_steps": cfg.grad_accum_steps,
+        "effective_batch_size": cfg.batch_size * cfg.grad_accum_steps,
         "num_workers": cfg.num_workers,
         "steps": total_steps,
         "save_freq": cfg.save_freq,
@@ -781,6 +840,7 @@ def _snapshot_payload(cfg: EmixTrainConfig, resume_cfg: ResumeConfig, start_step
         "training_mode": cfg.training_mode,
         "image_noise": cfg.image_noise.to_dict(),
         "protocol": cfg.protocol,
+        "peft": cfg.peft,
         "seed": resume_cfg.seed,
         "resume": describe_resume_config(resume_cfg),
         "start_step": start_step,
@@ -801,7 +861,7 @@ def _make_emix_debug_exporter(cfg: EmixTrainConfig):
 
     from embodied_mixup.visualization.emix_debug import EmixDebugExporter, EmixDebugSettings
 
-    debug_payload = dict((cfg.emix or {}).get("debug") or {})
+    debug_payload = dict(cfg.training_debug or (cfg.emix or {}).get("debug") or {})
     settings = EmixDebugSettings.from_payload(
         debug_payload,
         default_output_dir=cfg.output_dir / "emix_debug",
@@ -863,6 +923,9 @@ def train(
     _debug_configure(cfg.encoder_debug)
 
     ds_meta, dataset, policy = _create_dataset_and_policy(cfg)
+    if cfg.peft:
+        policy = policy.wrap_with_peft(peft_cli_overrides=cfg.peft)
+        cfg.policy_cfg.use_peft = True
     preprocessor, action_normalizer = _build_train_processors(policy.config, ds_meta.stats)
     optimizer_cfg = cfg.policy_cfg.get_optimizer_preset()
     scheduler_cfg = cfg.policy_cfg.get_scheduler_preset()
@@ -887,6 +950,8 @@ def train(
         image_noise=cfg.image_noise,
         protocol=cfg.protocol,
         video_backend=cfg.video_backend,
+        dataset_repo_ids=cfg.dataset_repo_ids,
+        dataset_stats=ds_meta.stats if cfg.dataset_repo_ids is not None else None,
     )
 
     total_steps = int(resume_cfg.total_steps_override) if resume_cfg.total_steps_override is not None else int(cfg.steps)
@@ -918,11 +983,13 @@ def train(
                 f"requested {resolved_checkpoint}"
             )
         required_resume_files = (
-            resolved_checkpoint / "pretrained_model" / "model.safetensors",
             resolved_checkpoint / "training_state" / "optimizer_state.safetensors",
             resolved_checkpoint / "training_state" / "rng_state.safetensors",
             resolved_checkpoint / "training_state" / "training_step.json",
         )
+        policy_weights = (resolved_checkpoint / "pretrained_model" / "model.safetensors", resolved_checkpoint / "pretrained_model" / "adapter_model.safetensors")
+        if not any(path.is_file() for path in policy_weights):
+            required_resume_files = (*required_resume_files, policy_weights[0])
         missing_resume_files = [str(path) for path in required_resume_files if not path.is_file()]
         if missing_resume_files:
             raise FileNotFoundError(
@@ -941,6 +1008,10 @@ def train(
     snapshot_path = save_config_snapshot(cfg.output_dir, config_snapshot)
     LOGGER.info("[train] config_snapshot=%s", snapshot_path)
     LOGGER.info("[train] output_dir=%s seed=%d total_steps=%d start_step=%d", cfg.output_dir, resume_cfg.seed, total_steps, start_step)
+    LOGGER.info(
+        "[train] batch_size=%d grad_accum_steps=%d effective_batch_size=%d",
+        cfg.batch_size, cfg.grad_accum_steps, cfg.batch_size * cfg.grad_accum_steps,
+    )
     LOGGER.info("[train] dataset_repo_id=%s policy_type=%s", cfg.dataset_repo_id, cfg.policy_cfg.type)
     LOGGER.info("[train] training_mode=%s", cfg.training_mode)
     LOGGER.info("[train] image_noise=%s (training only, before policy normalization)", cfg.image_noise.to_dict())
@@ -985,33 +1056,43 @@ def train(
         for step in progress:
             _debug_set_step(step)
             emix_prob = mix_scheduler.emix_batch_prob(step, total_steps)
-            batch_source = "emix" if mix_rng.random() < emix_prob else "non_emix"
-
-            if batch_source == "emix":
-                try:
-                    batch = next(emix_iter)
-                except StopIteration:
-                    emix_iter = iter(emix_dataloader)
-                    batch = next(emix_iter)
-            else:
-                try:
-                    batch = next(nonemix_iter)
-                except StopIteration:
-                    nonemix_iter = iter(nonemix_dataloader)
-                    batch = next(nonemix_iter)
-
-            _record_detect_overlap_fallbacks(batch, cfg.output_dir, step)
-            batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=step)
-            if batch_source == "emix" and emix_debug_exporter is not None:
-                emix_debug_exporter.export_batch(batch, step)
-            batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
-            batch = _move_batch_to_device(batch, device)
-            batch = _prepare_policy_batch(cfg.policy_cfg, policy, batch)
-
-            policy.train()
             optimizer.zero_grad(set_to_none=True)
-            loss, loss_dict = policy.forward(batch)
-            loss.backward()
+            micro_losses: list[float] = []
+            micro_sources: list[str] = []
+            last_loss_dict: dict[str, Any] = {}
+            last_batch_source = "non_emix"
+            for micro_step in _accumulation_window(step, cfg.grad_accum_steps):
+                batch_source = "emix" if mix_rng.random() < emix_prob else "non_emix"
+
+                if batch_source == "emix":
+                    try:
+                        batch = next(emix_iter)
+                    except StopIteration:
+                        emix_iter = iter(emix_dataloader)
+                        batch = next(emix_iter)
+                else:
+                    try:
+                        batch = next(nonemix_iter)
+                    except StopIteration:
+                        nonemix_iter = iter(nonemix_dataloader)
+                        batch = next(nonemix_iter)
+
+                _record_detect_overlap_fallbacks(batch, cfg.output_dir, micro_step)
+                batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=micro_step)
+                if batch_source == "emix" and emix_debug_exporter is not None:
+                    emix_debug_exporter.export_batch(batch, micro_step)
+                batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
+                batch = _move_batch_to_device(batch, device)
+                batch = _prepare_policy_batch(cfg.policy_cfg, policy, batch)
+
+                policy.train()
+                loss, loss_dict = policy.forward(batch)
+                (loss / cfg.grad_accum_steps).backward()
+                micro_losses.append(float(loss.item()))
+                micro_sources.append(batch_source)
+                last_loss_dict = loss_dict
+                last_batch_source = batch_source
+
             grad_clip = getattr(optimizer_cfg, "grad_clip_norm", 0.0)
             if grad_clip and grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(policy.parameters(), grad_clip)
@@ -1020,10 +1101,11 @@ def train(
                 lr_scheduler.step()
 
             if step % cfg.log_freq == 0 or step == start_step + 1:
-                progress.set_postfix(loss=float(loss.item()))
+                loss_mean = sum(micro_losses) / len(micro_losses)
+                progress.set_postfix(loss=loss_mean)
                 LOGGER.info(
-                    "[train] step=%d loss=%.6f batch_source=%s emix_batch_prob=%.4f extra=%s",
-                    step, float(loss.item()), batch_source, emix_prob, loss_dict,
+                    "[train] step=%d loss=%.6f micro_losses=%s batch_source=%s emix_batch_prob=%.4f extra=%s",
+                    step, loss_mean, micro_losses, last_batch_source, emix_prob, last_loss_dict,
                 )
 
             if step % cfg.save_freq == 0 or step == total_steps:
@@ -1055,24 +1137,30 @@ def train(
         progress = tqdm(range(start_step + 1, total_steps + 1), desc=f"train:{cfg.policy_cfg.type}")
         for step in progress:
             _debug_set_step(step)
-            try:
-                batch = next(dl_iter)
-            except StopIteration:
-                dl_iter = iter(dataloader)
-                batch = next(dl_iter)
-
-            _record_detect_overlap_fallbacks(batch, cfg.output_dir, step)
-            batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=step)
-            if emix_debug_exporter is not None:
-                emix_debug_exporter.export_batch(batch, step)
-            batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
-            batch = _move_batch_to_device(batch, device)
-            batch = _prepare_policy_batch(cfg.policy_cfg, policy, batch)
-
-            policy.train()
             optimizer.zero_grad(set_to_none=True)
-            loss, loss_dict = policy.forward(batch)
-            loss.backward()
+            micro_losses: list[float] = []
+            last_loss_dict: dict[str, Any] = {}
+            for micro_step in _accumulation_window(step, cfg.grad_accum_steps):
+                try:
+                    batch = next(dl_iter)
+                except StopIteration:
+                    dl_iter = iter(dataloader)
+                    batch = next(dl_iter)
+
+                _record_detect_overlap_fallbacks(batch, cfg.output_dir, micro_step)
+                batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=micro_step)
+                if emix_debug_exporter is not None:
+                    emix_debug_exporter.export_batch(batch, micro_step)
+                batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
+                batch = _move_batch_to_device(batch, device)
+                batch = _prepare_policy_batch(cfg.policy_cfg, policy, batch)
+
+                policy.train()
+                loss, loss_dict = policy.forward(batch)
+                (loss / cfg.grad_accum_steps).backward()
+                micro_losses.append(float(loss.item()))
+                last_loss_dict = loss_dict
+
             grad_clip = getattr(optimizer_cfg, "grad_clip_norm", 0.0)
             if grad_clip and grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(policy.parameters(), grad_clip)
@@ -1081,8 +1169,12 @@ def train(
                 lr_scheduler.step()
 
             if step % cfg.log_freq == 0 or step == start_step + 1:
-                progress.set_postfix(loss=float(loss.item()))
-                LOGGER.info("[train] step=%d loss=%.6f extra=%s", step, float(loss.item()), loss_dict)
+                loss_mean = sum(micro_losses) / len(micro_losses)
+                progress.set_postfix(loss=loss_mean)
+                LOGGER.info(
+                    "[train] step=%d loss=%.6f micro_losses=%s extra=%s",
+                    step, loss_mean, micro_losses, last_loss_dict,
+                )
 
             if step % cfg.save_freq == 0 or step == total_steps:
                 checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, total_steps, step)
@@ -1112,22 +1204,30 @@ def train(
         progress = tqdm(range(start_step + 1, total_steps + 1), desc=f"train:{cfg.policy_cfg.type}")
         for step in progress:
             _debug_set_step(step)
-            try:
-                batch = next(dl_iter)
-            except StopIteration:
-                dl_iter = iter(dataloader)
-                batch = next(dl_iter)
-
-            _record_detect_overlap_fallbacks(batch, cfg.output_dir, step)
-            batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=step)
-            batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
-            batch = _move_batch_to_device(batch, device)
-            batch = _prepare_policy_batch(cfg.policy_cfg, policy, batch)
-
-            policy.train()
             optimizer.zero_grad(set_to_none=True)
-            loss, loss_dict = policy.forward(batch)
-            loss.backward()
+            micro_losses: list[float] = []
+            last_loss_dict: dict[str, Any] = {}
+            for micro_step in _accumulation_window(step, cfg.grad_accum_steps):
+                try:
+                    batch = next(dl_iter)
+                except StopIteration:
+                    dl_iter = iter(dataloader)
+                    batch = next(dl_iter)
+
+                _record_detect_overlap_fallbacks(batch, cfg.output_dir, micro_step)
+                batch = add_image_noise(batch, cfg.image_noise, seed=resume_cfg.seed, step=micro_step)
+                if emix_debug_exporter is not None:
+                    emix_debug_exporter.export_plain_batch(batch, micro_step)
+                batch = _preprocess_training_batch(batch, preprocessor, action_normalizer)
+                batch = _move_batch_to_device(batch, device)
+                batch = _prepare_policy_batch(cfg.policy_cfg, policy, batch)
+
+                policy.train()
+                loss, loss_dict = policy.forward(batch)
+                (loss / cfg.grad_accum_steps).backward()
+                micro_losses.append(float(loss.item()))
+                last_loss_dict = loss_dict
+
             grad_clip = getattr(optimizer_cfg, "grad_clip_norm", 0.0)
             if grad_clip and grad_clip > 0:
                 torch.nn.utils.clip_grad_norm_(policy.parameters(), grad_clip)
@@ -1136,8 +1236,12 @@ def train(
                 lr_scheduler.step()
 
             if step % cfg.log_freq == 0 or step == start_step + 1:
-                progress.set_postfix(loss=float(loss.item()))
-                LOGGER.info("[train] step=%d loss=%.6f extra=%s", step, float(loss.item()), loss_dict)
+                loss_mean = sum(micro_losses) / len(micro_losses)
+                progress.set_postfix(loss=loss_mean)
+                LOGGER.info(
+                    "[train] step=%d loss=%.6f micro_losses=%s extra=%s",
+                    step, loss_mean, micro_losses, last_loss_dict,
+                )
 
             if step % cfg.save_freq == 0 or step == total_steps:
                 checkpoint_dir = get_step_checkpoint_dir(cfg.output_dir, total_steps, step)

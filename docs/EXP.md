@@ -1,6 +1,28 @@
+## 2026-11-05 — multi-v0-searchparam：Baseline 微调步数搜索
+
+本批次仅研究十任务 SmolVLA Baseline 随微调步数变化的结果，不使用 EMIX。沿用 multi-v0 的 `lerobot/smolvla_base` 起点、十任务同一数据、训练 seed 0、batch size 8、num_workers 16、优化器/策略参数及当前 RoboTwin 评估协议。**训练上限为 400,000 optimizer steps**；400k 是原 100k 的四倍。每到 100k、200k、300k、400k checkpoint，各任务分别评估 100 episodes，计划共 **1 条连续训练轨迹、40 次单任务评估**。100k 也按当前评估代码重评，不直接复用旧指标。
+
+利用已完成的 multi-v0 Baseline 100k checkpoint（含模型、优化器、scheduler 与 RNG 状态）复制到本批次独立目录，从 100k 续训，原批次保留。训练配置只变更总步数至 400k、checkpoint 保存间隔至 100k、输出目录与 debug 输出；其余训练参数与原 Baseline 配置相同。训练不中断地推进，评估器在每个完整 checkpoint 出现后自动评估十任务，最多三任务并发。配置解析与原 Baseline 参数对照 mock 已通过。执行入口 `scripts/run_multi_v0_searchparam.py`，源配置 `configs/scripts/multi_v0_searchparam.yaml`，后台 PID `outputs/multi-v0-searchparam/runner.pid`，日志 `runner.log` 和 `train.log`。
+
+**批次状态：已完成。**400k 训练 checkpoint 与四个步数下的 40 次单任务评估均完成。结果已归档至 `docs/RESULT.md`；原始 metrics 保留于 `outputs/multi-v0-searchparam/eval/`。400k 模型与训练状态文件按用户指示在归档后删除；其他 checkpoint 不因本次归档而变更。
+
+---
+
+## 2026-11-05 — 废弃批次记录
+
+曾短暂启动错误命名的 `multi-v1-scratch` 随机初始化批次。按用户决定，该批次**废弃且不纳入实验矩阵**：进程已停止，配置、脚本、索引及全部输出已清除；未产生有效 checkpoint 或评估结果。从头训练方向若以后重启，应在 multi-v0 系列内重新定义。
+
+---
+
+
 # 实验协议真相文档（_exp.md）
 
-更新：2026-10-30（sin-v0；当前执行进度见 2.6）。**本文档是当前项目实验的唯一认证来源和实施记录**：实验命名、固定条件、运行顺序和状态的唯一权威入口。YAML 是协议的可执行表示；TODEV 是开发清单，SOP 是操作说明，归档 SUMMARY 是历史证据。
+## 2026-11-05 — RoboTwin 评估行为对齐说明
+
+旧 `sin-v0-seg` 环境在 2026-10-30 至 10-31 出现过 pybind11 / `PyGILState_Check` 原生崩溃和卡住，因此评估器一度采用定向异常分类、十次 seed 尝试后重启和 GIL 捕获钩子。策略与仿真环境重装隔离后，近期 `multi-v0` 及其他可见评估日志未再观察到该错误；当前按环境侧故障记录，具体底层库未被证实。后续评估器的专家过滤、任务对象复用与成功条件检查顺序对齐 RoboTwin `main`。评估器版本标识为 `robotwin-main-aligned-20261105`；`multi-v0` 在 `emix-mix/place_burger_fries_left_oppo_cam` 完成 100 回合后切换，下一任务 `emix-mix/place_cans_plasticbox_left_oppo_cam` 起使用新协议。本节是后续协议变更；下方历史批次记录和已产生指标不追溯改写。旧批次与新协议的评估结果需注明各自代码版本。 当前未完成的 mix/patch 任务采用最多四个进程并发评估（含顺序队列当时已启动的任务）；这只改变调度，单任务的 seed、episode 数、检查点和评估参数保持原配置。
+
+
+更新：2026-11-05（multi-v0 评估器协议切换；sin-v0 当前执行进度见 2.6）。**本文档是当前项目实验的唯一认证来源和实施记录**：实验命名、固定条件、运行顺序和状态的唯一权威入口。YAML 是协议的可执行表示；TODEV 是开发清单，SOP 是操作说明，归档 SUMMARY 是历史证据。
 
 文档结构：第一部分为 **sin-v0 现行标准**，记录当前探索目标及正在执行的协议；第二部分为 **过去标准和历史记录**，保留旧 V0 参数、运行记录和历史决策。
 
@@ -20,6 +42,9 @@
 | 2 | `sin-v0-patch` | 把 EMIX 的线性透明度混合替换为对象掩码硬拼贴，是否改善结果 | **已完成；有效正式批次完成训练和评测，错误掩码批次作废**。 |
 | 3 | sin-v0-seg | 按 pick/place 阶段和当前目标物体选择增强对象，是否改善结果 | 四个处理臂已启动训练/评估；BaselineDP 复用 sin-v0-patch 的十任务结果。 |
 | 4 | `sin-v0-task-expansion` | 将方法扩展到 push/pull/open/close 多物体任务 | 后续方向；待前述阶段增强验证后规划。 |
+| 5 | `multi-v0-mix` | 十任务联合微调 SmolVLA：无增强 Baseline 对照与线性叠加 EMIX | 2026-11-02 已启动正式执行器；共用 Baseline 正在训练，后续按顺序评估并运行 mix/patch。 |
+| 6 | `multi-v0-patch` | 同一十任务联合微调协议下比较对象拼贴 EMIX，复用 Baseline 对照 | 2026-11-02 已启动正式执行器；共用 Baseline 正在训练，后续按顺序评估并运行 mix/patch。 |
+| 7 | `multi-v0-searchparam` | 十任务 SmolVLA Baseline 从已完成 100k checkpoint 续训到 400k，每 100k 重评十任务 | 2026-11-05 已启动；当前从 100k 续训，并行重评 100k。400k 完整 checkpoint 保留。 |
 
 噪声结果的方向性结论来自最新用户确认；旧运行状态记录曾显示 EMIX 双侧评估未完成，不能据旧快照覆盖本节结论。当前没有在本次工作中重算或补录噪声数值。
 
@@ -142,6 +167,41 @@ EmixIndex v3 的唯一规范为 embodied_mixup/candidates/emix_index_spec.py，�
 本次正式数据为十任务、每任务 300 个 episode。启动门槛已满足：sidecar 对象名规范且 segment 数组与帧数一致；v3 索引含逐成员 segment 且源指纹覆盖 annotations；十任务均有同阶段候选；四个处理臂配置分别对应 Mix/Patch × overlap refuse 关闭/0.33，所有臂均启用 segment-wise。
 
 当前进度：阶段标注脚本与配方已在 commit f5929d1；EmixIndex v3 规范、数据副本准备及十任务索引已在 commit 6e4ca4a 和后续构建中完成。sin-v0-seg 四个处理臂配置已在 commit 33e6579 固定；BaselineDP 复用 sin-v0-patch 的十任务 100 集评估。四臂已于 2026-10-30 03:56 CST 启动，按 seg_mix → seg_patch → seg_mix_overlap033 → seg_patch_overlap033 的顺序串行运行；当前结果以各臂日志与 metrics 为准。
+
+## 3. multi-v0：十任务联合 SmolVLA 微调
+
+**运行恢复（2026-11-04）**：SSH 端点改为 `connect.bjb1.seetacloud.com:39676` 后，数据盘容量显示为 119GB（此前记录为 200GB），原执行器与并行评估进程均不在；日志在 rollout 中途结束，未见明确 ENOSPC 异常，进程停止原因不能仅归于磁盘。盘当时仅剩 8MB；清理本轮可再生成的 smoke checkpoint 约 8.3GB，以及无安装进程使用的两处 pip 下载缓存约 18GB，正式数据、checkpoint、metrics 和恢复文件均保留，空闲回升至约 27GB。主执行器和 mix/patch 并行守候器已按现有结果重启，PID 分别为 3121、3122；Baseline 未完成任务从 `.eval_resume.json` 继续。
+
+**并行执行调整（2026-11-04）**：扩容重启后主队列从 Baseline 未完成评估继续，另并行启动 Baseline 的 `place_dual_shoes` 单任务评估。三训练臂均从同一预训练 checkpoint 独立微调，因此提前启动正式 `emix-patch` 训练（PID 4372），与 Baseline 评估同时使用 GPU；已完成首个优化步。mix 仍由主队列在 Baseline 评估结束后启动；主队列到达 patch 时以最终 checkpoint 为依据跳过重复训练。另有 patch 专属 watcher（PID 7543）等待最终 checkpoint，随后加开三项靠后任务的正式评估；原 watcher 继续负责 mix 及未完成的 patch 评估。所有并行作业使用各自正式配置和独立输出，不改变训练次数、episode 或 seed。
+
+**正式运行状态（2026-11-02 20:14 CST）**：GPU 空闲后启动 `scripts/run_multi_v0.py --mode run`，后台 PID `366068`；启动 mock 通过，Baseline 已进入 100,000 步训练且首个优化步完成。执行器日志为 `outputs/multi-v0/runner.log`，PID 文件为 `outputs/multi-v0/runner.pid`。正式结果以 checkpoint 和每任务 metrics 为准；本段只记录启动状态。
+
+**评估加速（2026-11-03）**：Baseline 前两项评估完成后，原执行器继续评估第三项；另外并行启动 `place_bread_skillet`、`place_can_basket`、`stack_bowls_two` 三个靠后的单任务评估，总并发上限四路。各任务使用正式配置、独立输出目录与恢复文件；原执行器遇到已完成的 100-episode metrics 会跳过。额外的 `scripts/parallel_multi_v0_eval.py` 守候 mix/patch 最终 checkpoint，并对这两臂同样加开三个靠后任务。四路并发观测显存约 13.4GB；该数值是瞬时占用而非峰值。并行只改变评估排程，不改变训练次数、各任务 episode、seed 或 checkpoint。日志与 PID 位于 `outputs/multi-v0/parallel/`。
+
+**评估恢复记录（2026-11-03）**：Baseline 的 `place_can_basket` 并行评估在 6/100 时遇到仿真 `UnStableError`（seed 100040），保留恢复文件后退出。评估器现将该场景初始化异常视为不可行 expert seed 并跳过；同配置从 6/100 恢复，已确认跳过 seed 100040 并继续 100041。其他正在运行的评估进程未中断。
+
+### 3.1 实验身份和处理臂
+
+`multi-v0-mix` 与 `multi-v0-patch` 使用同一批十任务数据、同一个 `lerobot/smolvla_base` 预训练权重作为起点。当前阶段只做后训练微调；**随机初始化训练列为后续 TODO**，与 `sin-v0-task-expansion` 一样不属于本轮正式批次。三臂分别独立训练一个多任务 SmolVLA，合计**训练 3 次**：
+
+| 训练臂 | 实验批次 | 训练数据与增强 | 训练模型数 |
+|---|---|---|---:|
+| `smolvla-baseline` | 两批次共用对照 | 十任务原始观测与动作；不使用 EmixIndex 或 EMIX 增强 | 1 |
+| `emix-mix` | `multi-v0-mix` | 十任务混合数据与统一混合 EmixIndex；图像按线性透明度叠加 | 1 |
+| `emix-patch` | `multi-v0-patch` | 与 mix 相同的数据及统一混合 EmixIndex；对象实例掩码硬拼贴 | 1 |
+
+十任务为 2.2 所列全部 `left_oppo_cam` 任务，每任务 300 条专家轨迹。联合训练须保留每帧对应的任务语言描述、左臂 7 维状态与动作以及任务身份。构建覆盖全部十任务的**统一混合 EmixIndex**（十份单源索引与跨任务候选组成统一来源清单；训练样本中跨任务配对占 25%），供 mix 与 patch 两臂复用；Baseline 不读取索引。跨任务候选按末端位姿、夹爪状态、未来动作差异筛选，索引保存 A/B 各自的任务、episode 与源帧。A 帧提供训练任务提示词和主状态；B 帧提供第二动作监督，patch 只从 B 所属任务的实例标注读取掩码。该增强允许异任务动作目标与 A 的语言提示词并存，结果解释须考虑这一语义；索引与 mock 必须验证来源追踪。
+
+**评估 seed 对齐审计（2026-11-04）**：现行评估器对每个模型独立从同一候选起始 seed 开始执行 expert validation，仅将通过的 seed 计入 100 episodes；因此固定起始 seed 并不保证实际接收的 100 个 seed 相同。代码中 RoboTwin 重置 NumPy/PyTorch RNG，但 Python `random.seed` 被注释，而 CuRobo PRM 使用 `random.choice`，这是已确认的未受控随机来源；物理与规划运行时也可能带来差异，尚未逐项归因。已完成 patch 对比中，共同 seed 数分别为 `place_bread_skillet` 99/100、`place_can_basket` 68/100、`stack_bowls_two` 63/100。当前批次保持原评估协议以免混合规则；结果汇总必须同时报告原始成功率与共同 seed 的配对成功数，审计入口为 `scripts/audit_multi_v0_seed_overlap.py`。后续严格配对评估须预先固定并复用每任务场景清单，并验证环境/规划器的重复性，作为独立修正协议。
+
+### 3.2 评估矩阵与执行门槛
+
+每个训练臂训练完成后，用该臂的**同一个最终 checkpoint**分别评估十个任务；每个任务各运行一次 100-episode 闭环评估，合计 **3 臂 × 10 任务 = 30 次评估**。每次评估向 SmolVLA 提供与被评估任务相符的语言指令，记录任务名、checkpoint、实际 episode seed 列表、成功率与运行配置。当前准备配置显式采用 `100000` steps、batch size `8`、每 `20000` steps 保存一次、训练 seed `0`，三臂都从同一个 `lerobot/smolvla_base` 完整 checkpoint 微调；冻结视觉编码器并只训练动作 expert 和状态投影。Baseline 按源帧数混合抽样；增强臂的 EMIX 数据集按 25% 比例抽取跨任务配对，其余从十份单源索引抽样。评估每任务 100 episodes、seed `0`，使用 `configs/scripts/multi_v0.yaml` 中从各任务训练数据抽取的英文任务提示词；除 EMIX 处理方式外三臂配置保持一致。三臂配置差异已审计，B8 显存与训练链路短程试跑已通过。
+
+已完成十任务跨源索引构建，筛出 20,000 对合法跨任务候选，十任务均能作为 A 侧提示词锚点和 B 侧图像/动作来源，跨任务 patch 的 10,142 个去重 B 侧帧掩码均非空且索引有效；真实 Baseline、mix、patch 样本及混合 batch 已通过 mock，mix/patch 的真实预训练 SmolVLA CPU 前向均返回有限 loss。执行入口为 `scripts/run_multi_v0.py --mode prepare|mock|run`；`run` 顺序执行三次训练与三十次评估，并在最终 checkpoint 上续跑或跳过已完成项。权重与输出写入 `/root/autodl-tmp`。GPU 空闲后已完成独立 smoke：Baseline 3 步和续训 30 步、mix 常规调度 3 步及强制增强 2+30 步、patch 强制增强 2 步均完成反向传播与 checkpoint 保存；强制增强配置只用于 smoke，正式调度器未改。Baseline 连续段热身后约 5.5–5.9 step/s，100% mix 连续段约 3.3–3.5 step/s；单臂 100k 步粗估 Baseline 约 5 小时、正式 mix/patch 约 5–8 小时，另计增强臂每次约 3–4 分钟索引冷启动、定期 checkpoint 与长期 I/O 波动。RTX 5090 32GB 可运行当前 B8，未测精确峰值显存。数据盘当前约剩 81GB，smoke 证据占约 8.3GB。Baseline 短训 checkpoint 的 RoboTwin 1-episode/800-step 评估完成并写出 metrics；该次含冷启动约 2 分钟，正式每任务 100 episodes 暂按约 1.5–3 小时安排，需以任务实际终止/重试分布校准。smoke 输出位于 `/root/autodl-tmp/outputs/multi-v0-smoke-261102`，不计入正式 3 训/30 评。
+
+正式训练前须完成：十任务源数据与实例标注核验；统一索引构建及来源追踪；三臂配置解析与数据、预处理、loss 的 mock 验证；SmolVLA 推理任务提示词与单任务评估 mock 验证；显存、磁盘及短程吞吐试跑。当前这些是开跑门槛，**不表示正式实验已完成**。随机初始化 SmolVLA 对照作为后续独立 TODO，须另立配置、训练记录和结果，不并入本轮三臂/三十次评估。
+
 ---
 
 以下内容保留 2026-09 V0 的固定参数、运行记录和历史决策，作为 sin-v0 的参考，不再代表当前待执行实验计划。与第一部分冲突时，以 sin-v0 现行标准及其最新状态为准。
@@ -566,3 +626,31 @@ Scheme A was selected and scheme B was not run. The queue restarted at 18:01
 with at most two arms active for one task at a time. Completed work is reused
 and the original `seg_patch` resume state remains intact. At startup,
 `seg_patch` evaluation and `seg_mix_overlap033` training ran concurrently.
+
+---
+
+## 2026-11-09 — π0.5 100k 连续微调
+
+此前 `v0-pi05-paramsearch` 使用 batch 1，已完成的 10k/20k 评估与 30k 部分评估归档于 `docs/results/20261109-pi05-batch1-pilot.md`。按用户要求停止旧评估，删除旧 batch-1 LoRA 模型权重和优化器状态，不从旧训练状态续训。
+
+新协议 `v0-pi05-100k` 从 `lerobot/pi05_base` 重新开始，沿用十任务数据、seed 0、LoRA rank 16、bf16、gradient checkpointing、单头相机和 50 步 action chunk。RTX 5090 32 GiB 上使用 batch 8；学习率和 warmup/decay 采用本机 LeRobot π0.5 配置的默认量级（峰值 2.5e-5、warmup 1000、末值 2.5e-6），decay 延伸至 100k。每 10k 保存恢复检查点，但正式评估仅在 100k 完成后执行：十任务各 100 episodes。2026-11-09 14:19 CST 已在 tmux 会话 pi05_100k 启动并完成首个优化步；约 9.2 GiB 显存占用，约 2.4 step/s，未启动评估。新输出独立位于 `outputs/v0-pi05-100k/`。唯一启动入口为 `scripts/experiment.py v0-pi05-100k --mode run`。
+
+## 2026-11-11 — PI0.5 100k→400k 续训批次状态
+
+实验代号 `v0-pi05-continue-400k`。从已完成的 100k LoRA checkpoint 续训，batch 8，seed 0，目标依次为 200k、300k、400k；每个里程碑使用相同十任务、每任务 100 回合评估。配置：`configs/scripts/v0_pi05_continue_400k.yaml`；入口：`scripts/experiment.py`；实现：`scripts/run_v0_pi05_continue_400k.py`。每轮评估完整后清理更早 checkpoint，最后保留 400k。2026-11-11 12:47 CST：200k 训练完成，200k 第 1 任务评估进行中（20/100 回合），其余评估与 300k/400k 尚未开始。结果以各任务 metrics 为准。
+
+2026-11-12 17:53 CST 状态更新：200k 十任务评估已完成，合计 12/1000（1.2%）；300k 训练进度约 284352/300000，400k 尚未开始。100k 及更早训练检查点已按队列规则清理；200k 检查点及评估结果保留。
+
+2026-11-13 11:38 CST 状态更新：300k 训练完成；300k 十任务评估已完成七项，4/700 成功，第八项 `place_can_basket_left_oppo_cam` 进行到 86/100。400k 训练尚未开始。200k 完整结果 12/1000，200k checkpoint 将在 300k 评估全部完成后清理。
+
+2026-11-14 03:27 CST 状态更新：400k 训练完成，400k 十任务评估完成；逐任务成功数（rgb / size / bread_basket / skillet / burger_fries / can_basket / cans_plasticbox / dual_shoes / stack_blocks_two / stack_bowls_two）为 1 / 0 / 0 / 1 / 2 / 4 / 0 / 0 / 0 / 8，合计 16/1000（1.6%）。四个里程碑合计：100k 10/1000（1.0%）、200k 12/1000（1.2%）、300k 13/1000（1.3%）、400k 16/1000（1.6%）。
+
+## 2026-11-15 — π0.5 有效 batch 32 与学习率修复（v0-pi05-accum300k）
+
+依据 LeRobot/π0.5 官方文档核对后，确认前序 π0.5 批次存在三处训练配置问题：①十任务共 1,407,234 帧，batch 8 时 1 epoch 约 176k 步，而文档给出的模仿学习收敛区间是 5-10 epochs，100k-400k 仅覆盖 0.6-2.3 epoch；②`v0-pi05-continue-400k` 段写 `scheduler_decay_steps=100000` 但 `steps=400000`，余弦在 25% 处即衰减至末值并平坦约 300k 步；③LoRA 学习率按文档应取全量微调的 10 倍，前序峰值 2.5e-5 偏低。
+
+新实验代号 `v0-pi05-accum300k`，训练侧三项改动：`grad_accum_steps=4` 配合 `batch_size=8` 达到有效 batch 32（`steps` 仍指优化步），峰值 `optimizer_lr=2.5e-4`、`scheduler_decay_steps=300000`、`scheduler_decay_lr=2.5e-5`。实现上在 `embodied_mixup/policies/train.py` 新增 `grad_accum_steps` 配置项：三个训练循环（plain / emix / mixed）统一改为每个优化步累积 N 个 micro-batch、按 1/N 缩放损失后一次 `optimizer.step()`；micro-batch 计数器由 `_accumulation_window()` 独立推进，使图像噪声注入种子、EMIX 调试导出序号与 overlap fallback 记录仍按 micro-batch 唯一。快照同时写入 `grad_accum_steps` 与 `effective_batch_size`。
+
+验证：`scripts/experiment.py v0-pi05-accum300k --mode mock` 通过（10 任务、steps=300000、grad_accum=4、LoRA r16、peak lr 2.5e-4、decay 300000）；两个任务的 12 优化步 × 4 micro-batch 冒烟（batch 2）通过，scheduler 末值 3.2e-6 符合余弦到末值的行为，checkpoint 正常写入后删除。
+
+按用户指示删除 π0.5 全部模型检查点（`v0-pi05-100k` 的 400k、`v0-pi05-paramsearch` 的 10k/20k/30k、`v0-pi05-smoke` 冒烟，以及本次冒烟目录），评估结果与日志全部保留（π0.5 目录下 91 份 metrics.json）；SmolVLA 归档未动。2026-11-15 15:29 CST 在 tmux 会话 `pi05_accum300k` 从 `lerobot/pi05_base` 重新开始，里程碑 100k/200k/300k，每段评估十任务各 100 回合，评估齐备后才清理上一段 checkpoint。结果见 `docs/results/20261115-pi05-accum300k.md`。

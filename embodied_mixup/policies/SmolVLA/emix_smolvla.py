@@ -116,8 +116,11 @@ class EmixSmolVLAPolicy(SmolVLAPolicy):
             images, img_masks, lang_tokens, lang_masks, state, action_1, noise, time
         )
 
-        alpha = batch["emix_alpha"].to(dtype=loss_0.dtype).view(-1, 1, 1)
-        losses = (alpha * loss_0) + ((1.0 - alpha) * loss_1)
+        if self.config.mixup_image_mode == "patch":
+            losses = loss_0 + loss_1
+        else:
+            alpha = batch["emix_alpha"].to(dtype=loss_0.dtype).view(-1, 1, 1)
+            losses = (alpha * loss_0) + ((1.0 - alpha) * loss_1)
 
         if actions_is_pad is not None:
             in_episode_bound = ~actions_is_pad

@@ -149,11 +149,11 @@ def _build_make_pre_post_processors():
 
             return make_diffusion_pre_post_processors(policy_cfg, dataset_stats=dataset_stats)
         if name == "smolvla":
-            from lerobot.policies.smolvla.processor_smolvla import (
-                make_smolvla_pre_post_processors,
-            )
-
+            from lerobot.policies.smolvla.processor_smolvla import make_smolvla_pre_post_processors
             return make_smolvla_pre_post_processors(policy_cfg, dataset_stats=dataset_stats)
+        if name == "pi05":
+            from lerobot.policies.pi05.processor_pi05 import make_pi05_pre_post_processors
+            return make_pi05_pre_post_processors(policy_cfg, dataset_stats=dataset_stats)
 
         raise NotImplementedError(f"Processor factory for policy type '{name}' is not implemented.")
 
@@ -173,11 +173,13 @@ def _patch_policy_factory() -> None:
         "act": ("lerobot.policies.act.configuration_act", "ACTConfig"),
         "diffusion": ("lerobot.policies.diffusion.configuration_diffusion", "DiffusionConfig"),
         "smolvla": ("lerobot.policies.smolvla.configuration_smolvla", "SmolVLAConfig"),
+        "pi05": ("lerobot.policies.pi05.configuration_pi05", "PI05Config"),
     }
     builtin_models = {
         "act": ("lerobot.policies.act.modeling_act", "ACTPolicy"),
         "diffusion": ("lerobot.policies.diffusion.modeling_diffusion", "DiffusionPolicy"),
         "smolvla": ("lerobot.policies.smolvla.modeling_smolvla", "SmolVLAPolicy"),
+        "pi05": ("lerobot.policies.pi05.modeling_pi05", "PI05Policy"),
     }
 
     def get_policy_class(name: str):
@@ -217,7 +219,15 @@ def _patch_policy_factory() -> None:
         if getattr(cfg, "input_keys", None) is not None:
             cfg.input_features = {key: ft for key, ft in cfg.input_features.items() if key in cfg.input_keys}
 
-        if getattr(cfg, "pretrained_path", None):
+        if getattr(cfg, "pretrained_path", None) and getattr(cfg, "use_peft", False):
+            from peft import PeftConfig, PeftModel
+            peft_config = PeftConfig.from_pretrained(cfg.pretrained_path)
+            base_path = peft_config.base_model_name_or_path
+            if not base_path:
+                raise ValueError("PEFT adapter does not record its base model path")
+            policy = policy_cls.from_pretrained(pretrained_name_or_path=base_path, **kwargs)
+            policy = PeftModel.from_pretrained(policy, cfg.pretrained_path, config=peft_config)
+        elif getattr(cfg, "pretrained_path", None):
             kwargs["pretrained_name_or_path"] = cfg.pretrained_path
             policy = policy_cls.from_pretrained(**kwargs)
         else:

@@ -1,0 +1,79 @@
+# Continue multi-v0 baseline from its complete 100k checkpoint to 400k; evaluate every 100k.
+protocol:
+  name: multi-v0-searchparam
+  timestamp: '261105'
+  training_seed: 0
+  evaluation_seed: 0
+  evaluation_episodes: 100
+sources:
+  dataset_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/lerobot_v3
+  index_root: /root/autodl-tmp/sin-v0-patch-oppo/formal/emix_index_v3
+  tasks:
+    blocks_ranking_rgb_left_oppo_cam: Use the left arm to put red block at the left,
+      the left arm to put green block in the middle and the left arm to put blue block
+      at the right.
+    place_burger_fries_left_oppo_cam: Put the round, soft bread hamburg and the Handheld
+      fries pack bright red color into the medium plastic tray with the left arm.
+    place_cans_plasticbox_left_oppo_cam: Use the left arm to drop the can with rounded
+      cylindrical shape and the Coca-Cola can into the plastic box the blue plastic
+      rectangular storage box.
+    stack_blocks_two_left_oppo_cam: Place red block with the left arm, then stack
+      green block on red block with the left arm.
+    blocks_ranking_size_left_oppo_cam: Move large block, medium block and small block
+      into one size-ordered line with the left arm.
+    place_bread_basket_left_oppo_cam: Put the first bread the rounded square loaf
+      and the second bread the medium-sized bread piece into the medium woven breadbasket
+      with the left arm.
+    place_bread_skillet_left_oppo_cam: Use the left arm to place the soft golden bread
+      onto the skillet the heavy black cooking skillet.
+    place_can_basket_left_oppo_cam: Place the red shiny can with green label into
+      the basket for carrying things with the left arm and leave the basket for carrying
+      things in place.
+    place_dual_shoes_left_oppo_cam: Use the left arm to put the shoes the shoe with
+      synthetic fabric body into the box the orange cardboard shoe-box.
+    stack_bowls_two_left_oppo_cam: Stack the small bowl with brown edge onto the glazed
+      bowl with curved sides using the left arm.
+training:
+  pretrained_path: lerobot/smolvla_base
+  batch_size: 8
+  steps: 400000
+  num_workers: 16
+  save_freq: 100000
+  log_freq: 200
+  video_backend: torchcodec
+  device: cuda
+  optimizer_lr: 0.0001
+  n_obs_steps: 1
+  chunk_size: 50
+  n_action_steps: 50
+  freeze_vision_encoder: true
+  train_expert_only: true
+  train_state_proj: true
+  load_vlm_weights: false
+  prefix_length: 0
+  pad_language_to: max_length
+  num_expert_layers: 0
+emix:
+  alpha_mode: beta
+  beta: 2.0
+  loss_weight: 1.0
+  state_mode: anchor
+  scheduler:
+    type: logarithmic
+    start_batch_prob: 0.6
+    end_batch_prob: 0.0
+  detect_overlap:
+    enable: false
+    refuse_ratio: 0.33
+evaluation:
+  episodes: 100
+  seed: 0
+  piper_distance: 0.6
+  device: cuda
+  save_video: true
+  video_fps: 10
+milestones:
+- 100000
+- 200000
+- 300000
+- 400000
