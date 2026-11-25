@@ -16,14 +16,16 @@ if [[ ! -f "$project_root/configs/scripts/pi05_baai_baseline.yaml" ]]; then
 fi
 
 if [[ ! -f "$env_root/.emix-ready" ]]; then
+  rm -rf "$env_root"
   mkdir -p "$env_root"
   tar -xf "$archive" -C "$env_root"
-  "$env_root/bin/conda-unpack"
+  PATH="$env_root/bin:$PATH" "$env_root/bin/conda-unpack"
   touch "$env_root/.emix-ready"
 fi
 
 export PYTHONPATH="$project_root${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HOME="${HF_HOME:-/home/zylong/hf-cache}"
 export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
+export HF_HUB_DOWNLOAD_TIMEOUT="${HF_HUB_DOWNLOAD_TIMEOUT:-90}"
 cd "$project_root"
 exec "$env_root/bin/python" -u scripts/experiment.py pi05-baai-baseline --mode run
