@@ -1,3 +1,13 @@
+## 2026-11-25 - BAAI ten-task PI0.5 full fine-tuning baseline
+
+Status: planned; no training job has been submitted. This protocol uses the ten 300-episode left_oppo_cam LeRobot v3 datasets from ModelScope longRat/EmixData1122, totaling 1,407,234 frames at 17 FPS. All source files are stored under /home/zylong/EmixData1122. The training job uses one 80 GB A800 and writes checkpoints and logs to the shared /home/zylong/EMIX directory. Evaluation is performed in a separate container later.
+
+The baseline starts from lerobot/pi05_base and trains all PI0.5 parameters: no LoRA, no frozen vision encoder, and no expert-only restriction. It uses LeRobot 0.4.4 fine-tuning settings: bfloat16, gradient checkpointing, torch.compile, the policy optimizer preset with peak learning rate 2.5e-5, 1,000 warmup steps, cosine decay over 300,000 optimizer steps to 2.5e-6, and quantile normalization from dataset metadata. The per-step batch size is 32 with grad_accum_steps=1, eight data workers, one observation, and a 50-action chunk. Seed is 0. At 300,000 optimizer steps, 9.6 million frame samples correspond to about 6.8 dataset passes. Save a checkpoint every 50,000 steps; 100k, 200k, and 300k are the evaluation handoff milestones. Only the newest checkpoint keeps optimizer state; earlier model weights remain available for later evaluation.
+
+The sole editable protocol configuration is configs/scripts/pi05_baai_baseline.yaml. The entry point is python -u scripts/experiment.py pi05-baai-baseline --mode run. This runner prepares and validates the ten-task dataset, checks the allocated GPU and pretrained weights, and launches training only. It does not launch RoboTwin evaluation.
+
+---
+
 ## 2026-11-05 — multi-v0-searchparam：Baseline 微调步数搜索
 
 本批次仅研究十任务 SmolVLA Baseline 随微调步数变化的结果，不使用 EMIX。沿用 multi-v0 的 `lerobot/smolvla_base` 起点、十任务同一数据、训练 seed 0、batch size 8、num_workers 16、优化器/策略参数及当前 RoboTwin 评估协议。**训练上限为 400,000 optimizer steps**；400k 是原 100k 的四倍。每到 100k、200k、300k、400k checkpoint，各任务分别评估 100 episodes，计划共 **1 条连续训练轨迹、40 次单任务评估**。100k 也按当前评估代码重评，不直接复用旧指标。

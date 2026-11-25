@@ -1,0 +1,43 @@
+# Training-only multi-task PI0.5 baseline for one A800 80 GB GPU.
+# Last modified: 2026-11-25.
+protocol:
+  name: pi05-baai-baseline
+  training_seed: 0
+  method: full_finetune
+  milestone_steps: [100000, 200000, 300000]
+sources:
+  dataset_root: /home/zylong/EmixData1122/lerobot_v3
+  tasks:
+    - blocks_ranking_rgb_left_oppo_cam
+    - blocks_ranking_size_left_oppo_cam
+    - place_bread_basket_left_oppo_cam
+    - place_bread_skillet_left_oppo_cam
+    - place_burger_fries_left_oppo_cam
+    - place_can_basket_left_oppo_cam
+    - place_cans_plasticbox_left_oppo_cam
+    - place_dual_shoes_left_oppo_cam
+    - stack_blocks_two_left_oppo_cam
+    - stack_bowls_two_left_oppo_cam
+training:
+  pretrained_path: lerobot/pi05_base
+  batch_size: 32
+  grad_accum_steps: 1
+  num_workers: 8
+  steps: 300000
+  save_freq: 50000
+  log_freq: 100
+  video_backend: torchcodec
+  device: cuda
+  dtype: bfloat16
+  compile_model: true
+  gradient_checkpointing: true
+  freeze_vision_encoder: false
+  train_expert_only: false
+  optimizer_lr: 0.000025
+  scheduler_warmup_steps: 1000
+  scheduler_decay_steps: 300000
+  scheduler_decay_lr: 0.0000025
+  n_obs_steps: 1
+  chunk_size: 50
+  n_action_steps: 50
+  push_to_hub: false

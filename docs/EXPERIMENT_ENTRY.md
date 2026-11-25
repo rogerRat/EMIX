@@ -1,5 +1,7 @@
 # 实验入口与结果管理
 
+BAAI training-only protocol pi05-baai-baseline uses configs/scripts/pi05_baai_baseline.yaml; see the 2026-11-25 entry in docs/EXP.md.
+
 唯一编排入口：`python scripts/experiment.py PROTOCOL --mode MODE`。目前支持 `multi-v0`、`multi-v1-scratch`、`v0-pi05-paramsearch` 和 `v0-pi05-100k`。使用对应实验环境的 Python，先检查 GPU、数据、磁盘及是否已有同一实验运行。
 
 - `--mode prepare`：验证数据并生成训练和评估配置及索引，可能覆盖已有生成文件。
