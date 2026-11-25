@@ -10,6 +10,9 @@ from pathlib import Path
 
 import yaml
 
+os.environ.setdefault("HF_HOME", "/home/zylong/hf-cache")
+os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+
 from embodied_mixup.policies.utils.multi_dataset import load_multi_dataset, validate_sources
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,9 +109,15 @@ def _run(config: dict, spec: dict) -> None:
     if properties.total_memory < 70 * 1024**3:
         raise RuntimeError(f"Expected an 80 GB GPU, got {properties.name}")
     print(f"GPU: {properties.name}, {properties.total_memory / 1024**3:.1f} GiB", flush=True)
-    os.environ.setdefault("HF_HOME", "/home/zylong/hf-cache")
     hf_hub_download(repo_id=spec["training"]["pretrained_path"], filename="model.safetensors")
-    hf_hub_download(repo_id="google/paligemma-3b-pt-224", filename="config.json")
+    try:
+        hf_hub_download(repo_id="google/paligemma-3b-pt-224", filename="config.json")
+    except Exception as exc:
+        raise RuntimeError(
+            "PaliGemma tokenizer access is required. Accept the model license at "
+            "https://huggingface.co/google/paligemma-3b-pt-224 and set HF_TOKEN "
+            "in the BAAI task environment."
+        ) from exc
     output_dir = Path(config["output_dir"])
     last = output_dir / "checkpoints/last"
     args = [
