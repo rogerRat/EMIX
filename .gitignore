@@ -91,3 +91,5 @@ ms_token.txt
 
 !/tests/test_instance_annotations.py
 !/tests/test_patch_training.py
+
+/job-logs/

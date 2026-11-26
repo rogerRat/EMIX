@@ -15,7 +15,7 @@ ln -sfn "$(basename "$log_file")" "$log_dir/latest.log"
 
 run_main() (
   set -Eeuo pipefail
-  trap 'rc=$?; printf "[error] line=%s exit=%s command=%s\n" "$LINENO" "$rc" "$BASH_COMMAND" >&2' ERR
+  trap 'rc=$?; printf "[error] line=%s exit=%s\n" "$LINENO" "$rc" >&2' ERR
   printf "[start] run=%s utc=%s host=%s uid=%s\n" "$run_id" "$(date -u +%FT%TZ)" "$(hostname)" "$(id -u)"
   printf "[paths] project=%s archive=%s env=%s\n" "$project_root" "$archive" "$env_root"
 
@@ -44,15 +44,15 @@ import sys
 
 root = Path(sys.prefix)
 lib_dir = root / "lib"
-av_dirs = list(root.glob("lib/python*/site-packages/av.libs"))
-if len(av_dirs) != 1:
-    raise RuntimeError(f"Expected one bundled PyAV FFmpeg library directory, found: {av_dirs}")
+av_dir = root / f"lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages/av.libs"
+if not av_dir.is_dir():
+    raise RuntimeError(f"Missing bundled PyAV FFmpeg library directory: {av_dir}")
 for name, major in (
     ("libavutil", 59), ("libavcodec", 61), ("libavformat", 61),
     ("libavdevice", 61), ("libavfilter", 10), ("libswscale", 8),
     ("libswresample", 5),
 ):
-    matches = list(av_dirs[0].glob(f"{name}-*.so.{major}.*"))
+    matches = list(av_dir.glob(f"{name}-*.so.{major}.*"))
     if len(matches) != 1:
         raise RuntimeError(f"Expected one bundled {name} library, found: {matches}")
     link = lib_dir / f"{name}.so.{major}"
