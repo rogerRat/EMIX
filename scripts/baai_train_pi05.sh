@@ -37,6 +37,46 @@ run_main() (
     touch "$env_root/.emix-ready"
   fi
 
+  echo "[setup] linking bundled FFmpeg libraries"
+  "$env_root/bin/python" - <<'PYFFMPEG'
+from pathlib import Path
+import sys
+
+root = Path(sys.prefix)
+lib_dir = root / "lib"
+av_dirs = list(root.glob("lib/python*/site-packages/av.libs"))
+if len(av_dirs) != 1:
+    raise RuntimeError(f"Expected one bundled PyAV FFmpeg library directory, found: {av_dirs}")
+for name, major in (
+    ("libavutil", 59), ("libavcodec", 61), ("libavformat", 61),
+    ("libavdevice", 61), ("libavfilter", 10), ("libswscale", 8),
+    ("libswresample", 5),
+):
+    matches = list(av_dirs[0].glob(f"{name}-*.so.{major}.*"))
+    if len(matches) != 1:
+        raise RuntimeError(f"Expected one bundled {name} library, found: {matches}")
+    link = lib_dir / f"{name}.so.{major}"
+    if link.is_symlink():
+        link.unlink()
+    elif link.exists():
+        raise RuntimeError(f"Refusing to replace existing FFmpeg library: {link}")
+    link.symlink_to(matches[0])
+print("[setup] FFmpeg libraries linked", flush=True)
+PYFFMPEG
+  export LD_LIBRARY_PATH="$env_root/lib:$env_root/lib/python3.10/site-packages/av.libs:$env_root/lib/python3.10/site-packages/torch/lib:${LD_LIBRARY_PATH:-}"
+  "$env_root/bin/python" - <<'PYGPU'
+import os
+import torch
+from torchcodec.decoders import VideoDecoder
+
+print("[setup] TorchCodec ready", flush=True)
+print(f"[gpu] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}", flush=True)
+if not torch.cuda.is_available():
+    raise RuntimeError("No CUDA GPU is visible in this scheduled container. Assign one A800 GPU to the task and ensure the command runs on the GPU worker.")
+properties = torch.cuda.get_device_properties(0)
+print(f"[gpu] {properties.name}, {properties.total_memory / 1024**3:.1f} GiB", flush=True)
+PYGPU
+
   export PYTHONPATH="$project_root${PYTHONPATH:+:$PYTHONPATH}"
   export HF_HOME="${HF_HOME:-/home/zylong/hf-cache}"
   export HF_ENDPOINT="${HF_ENDPOINT:-https://hf-mirror.com}"
