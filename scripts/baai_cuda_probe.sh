@@ -2,7 +2,7 @@
 # Diagnose GPU visibility in a scheduled BAAI container without unpacking EMIX.
 set -uo pipefail
 
-log_dir=/home/zylong/EMIX/job-logs
+log_dir=${EMIX_JOB_LOG_DIR:-/home/zylong/EMIX/job-logs}
 mkdir -p "$log_dir" || exit 1
 run_id="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 log_file="$log_dir/cuda-probe-$run_id.log"
