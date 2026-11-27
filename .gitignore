@@ -93,3 +93,5 @@ ms_token.txt
 !/tests/test_patch_training.py
 
 /job-logs/
+
+/hf_token.txt

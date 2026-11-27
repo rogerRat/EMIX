@@ -27,6 +27,18 @@ run_main() (
     echo "Missing shared EMIX checkout: $project_root" >&2
     exit 1
   fi
+  token_file="$project_root/hf_token.txt"
+  if [[ ! -r "$token_file" ]]; then
+    echo "Missing readable Hugging Face token file: $token_file" >&2
+    exit 1
+  fi
+  HF_TOKEN="$(tr -d '\r\n' < "$token_file")"
+  if [[ -z "$HF_TOKEN" ]]; then
+    echo "Hugging Face token file is empty: $token_file" >&2
+    exit 1
+  fi
+  export HF_TOKEN
+  echo "[auth] HF_TOKEN loaded from project file"
 
   if [[ ! -f "$env_root/.emix-ready" ]]; then
     rm -rf "$env_root"
