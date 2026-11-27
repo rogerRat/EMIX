@@ -64,6 +64,10 @@ for name, major in (
 print("[setup] FFmpeg libraries linked", flush=True)
 PYFFMPEG
   export LD_LIBRARY_PATH="$env_root/lib:$env_root/lib/python3.10/site-packages/av.libs:$env_root/lib/python3.10/site-packages/torch/lib:${LD_LIBRARY_PATH:-}"
+  echo "[gpu] nvidia-smi:"
+  if command -v nvidia-smi >/dev/null 2>&1; then nvidia-smi -L || true; else echo "nvidia-smi unavailable"; fi
+  echo "[gpu] device nodes:"
+  ls -l /dev/nvidia* 2>&1 || true
   "$env_root/bin/python" - <<'PYGPU'
 import os
 import torch
@@ -71,6 +75,7 @@ from torchcodec.decoders import VideoDecoder
 
 print("[setup] TorchCodec ready", flush=True)
 print(f"[gpu] CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '<unset>')}", flush=True)
+print(f"[gpu] torch={torch.__version__} built_cuda={torch.version.cuda} device_count={torch.cuda.device_count()}", flush=True)
 if not torch.cuda.is_available():
     raise RuntimeError("No CUDA GPU is visible in this scheduled container. Assign one A800 GPU to the task and ensure the command runs on the GPU worker.")
 properties = torch.cuda.get_device_properties(0)
